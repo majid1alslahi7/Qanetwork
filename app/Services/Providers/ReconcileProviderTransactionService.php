@@ -4,15 +4,14 @@ namespace App\Services\Providers;
 
 use App\Models\ProviderTransaction;
 use App\Models\SoldCard;
-use App\Providers\Data\PurchaseCardRequest;
-use App\Providers\Data\PurchaseCardResult;
+use App\Providers\Data\TransactionStatusResult;
 use App\Providers\Enums\ProviderTransactionStatus;
 use App\Providers\Registry\ProviderAdapterRegistry;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 use Throwable;
 
-class ExecuteProviderPurchaseService
+class ReconcileProviderTransactionService
 {
     public function __construct(
         private readonly ProviderAdapterRegistry $registry
@@ -21,32 +20,60 @@ class ExecuteProviderPurchaseService
 
     public function handle(
         ProviderTransaction $transaction
-    ): PurchaseCardResult {
+    ): TransactionStatusResult {
         /*
          * Phase 1:
-         * Validate locally and mark the attempt as processing.
+         * Read a fresh transaction and validate that it is
+         * eligible for reconciliation.
          *
-         * We intentionally finish this DB transaction BEFORE
-         * making the external provider call.
+         * Never hold a DB transaction while calling the provider.
          */
         $prepared = DB::transaction(function () use ($transaction) {
             $locked = ProviderTransaction::query()
                 ->lockForUpdate()
                 ->findOrFail($transaction->id);
 
-            if ($locked->status !== 'created') {
+            /*
+             * A confirmed/failed transaction already has a
+             * definitive provider result. Do not contact the
+             * provider again through this service.
+             */
+            if (in_array(
+                $locked->status,
+                ['confirmed', 'failed'],
+                true
+            )) {
                 throw new RuntimeException(
-                    'Only a created provider transaction can be executed.'
+                    'Final provider transaction cannot be reconciled.'
+                );
+            }
+
+            /*
+             * "created" means purchaseCard() has not yet been
+             * attempted, so there is nothing to reconcile.
+             */
+            if ($locked->status === 'created') {
+                throw new RuntimeException(
+                    'Provider transaction has not been executed yet.'
+                );
+            }
+
+            if (! in_array(
+                $locked->status,
+                [
+                    'processing',
+                    'timeout',
+                    'unknown',
+                    'reconciliation_required',
+                ],
+                true
+            )) {
+                throw new RuntimeException(
+                    'Provider transaction is not eligible for reconciliation.'
                 );
             }
 
             $sale = $locked->sale()->firstOrFail();
-
-            if ($sale->status !== 'balance_reserved') {
-                throw new RuntimeException(
-                    'Sale must remain balance_reserved before provider execution.'
-                );
-            }
 
             $reservation = $sale->reservation()->first();
 
@@ -55,7 +82,7 @@ class ExecuteProviderPurchaseService
                 $reservation->status !== 'reserved'
             ) {
                 throw new RuntimeException(
-                    'Sale must have an active reservation before provider execution.'
+                    'Reconciliation requires an active seller reservation.'
                 );
             }
 
@@ -73,34 +100,13 @@ class ExecuteProviderPurchaseService
                 );
             }
 
-            $product = $sale->product()->firstOrFail();
-
-            $locked->status = 'processing';
-            $locked->attempt_count =
-                ((int) $locked->attempt_count) + 1;
-            $locked->request_started_at ??= now();
-            $locked->save();
-
-            $sale->status = 'processing_provider';
-            $sale->save();
-
             return [
                 'transaction_id' => $locked->id,
                 'connection' => $connection,
-                'request' => new PurchaseCardRequest(
-                    internalTransactionId:
-                        $locked->internal_transaction_id,
-                    idempotencyKey:
-                        $locked->idempotency_key,
-                    externalProductId:
-                        $product->external_product_id,
-                    saleId:
-                        $sale->id,
-                    expectedFaceValue:
-                        (string) $product->face_value,
-                    currencyCode:
-                        $sale->currency_code,
-                ),
+                'internal_transaction_id' =>
+                    $locked->internal_transaction_id,
+                'provider_transaction_id' =>
+                    $locked->provider_transaction_id,
             ];
         }, 3);
 
@@ -109,30 +115,36 @@ class ExecuteProviderPurchaseService
         );
 
         /*
-         * Phase 2:
-         * External call happens OUTSIDE a DB transaction.
+         * Critical rule:
+         *
+         * Reconciliation NEVER calls purchaseCard().
+         * It only asks the provider about the already existing
+         * transaction.
          */
         try {
-            $result = $adapter->purchaseCard(
+            $result = $adapter->checkTransaction(
                 $prepared['connection'],
-                $prepared['request']
+                $prepared['internal_transaction_id'],
+                $prepared['provider_transaction_id']
             );
         } catch (Throwable $e) {
             /*
-             * Once the request may have left QaNetwork,
-             * an exception is NOT proof that the provider
-             * failed to issue a card.
-             *
-             * Treat it as UNKNOWN, never as FAILED.
+             * Failure to check status does not prove that the
+             * original purchase failed.
              */
-            $result = PurchaseCardResult::unknown(
+            $result = new TransactionStatusResult(
+                status:
+                    ProviderTransactionStatus::RECONCILIATION_REQUIRED,
+                providerTransactionId:
+                    $prepared['provider_transaction_id'],
+                errorCode: 'RECONCILIATION_CHECK_FAILED',
                 errorMessage: 'Provider adapter call failed; reconciliation required.'
             );
         }
 
         /*
-         * Defensive validation:
-         * credentials are accepted only for CONFIRMED.
+         * Credentials are valid only after a positive provider
+         * confirmation.
          */
         if (
             $result->status !==
@@ -140,24 +152,32 @@ class ExecuteProviderPurchaseService
             $result->credentials !== null
         ) {
             throw new RuntimeException(
-                'Provider returned credentials for a non-confirmed transaction.'
+                'Provider returned credentials for a non-confirmed reconciliation result.'
             );
         }
 
+        /*
+         * A provider may report "confirmed" while its API failed
+         * to return the actual card credentials. We cannot debit
+         * or release the seller in that state.
+         */
         if (
             $result->status ===
                 ProviderTransactionStatus::CONFIRMED &&
             empty($result->credentials)
         ) {
-            /*
-             * Provider says confirmed but gave us no card.
-             * We cannot safely complete or release the sale.
-             */
-            $result = PurchaseCardResult::unknown(
+            $result = new TransactionStatusResult(
+                status:
+                    ProviderTransactionStatus::RECONCILIATION_REQUIRED,
                 providerTransactionId:
-                    $result->providerTransactionId,
+                    $result->providerTransactionId
+                        ?? $prepared['provider_transaction_id'],
+                providerCardReference:
+                    $result->providerCardReference,
                 providerStatus:
                     $result->providerStatus,
+                errorCode:
+                    'CONFIRMED_WITHOUT_CREDENTIALS',
                 errorMessage:
                     'Provider confirmed transaction without card credentials.'
             );
@@ -165,7 +185,10 @@ class ExecuteProviderPurchaseService
 
         /*
          * Phase 3:
-         * Persist the provider result.
+         * Persist only the newly learned provider state.
+         *
+         * Financial capture/release will be orchestrated in the
+         * next layer after this state transition is proven.
          */
         return DB::transaction(function () use (
             $prepared,
@@ -175,9 +198,18 @@ class ExecuteProviderPurchaseService
                 ->lockForUpdate()
                 ->findOrFail($prepared['transaction_id']);
 
-            if ($locked->status !== 'processing') {
+            /*
+             * Another worker may have finalized the transaction
+             * while this worker was waiting for the provider.
+             * Never overwrite a final state with stale data.
+             */
+            if (in_array(
+                $locked->status,
+                ['confirmed', 'failed'],
+                true
+            )) {
                 throw new RuntimeException(
-                    'Provider transaction is no longer processing.'
+                    'Provider transaction became final during reconciliation.'
                 );
             }
 
@@ -185,8 +217,29 @@ class ExecuteProviderPurchaseService
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            $locked->provider_transaction_id =
-                $result->providerTransactionId;
+            /*
+             * Preserve an already-known provider transaction ID.
+             * A provider must not suddenly identify the same
+             * operation as a different transaction.
+             */
+            if (
+                $locked->provider_transaction_id !== null &&
+                $result->providerTransactionId !== null &&
+                $locked->provider_transaction_id !==
+                    $result->providerTransactionId
+            ) {
+                throw new RuntimeException(
+                    'Provider transaction identifier changed during reconciliation.'
+                );
+            }
+
+            if (
+                $locked->provider_transaction_id === null &&
+                $result->providerTransactionId !== null
+            ) {
+                $locked->provider_transaction_id =
+                    $result->providerTransactionId;
+            }
 
             $locked->provider_status =
                 $result->providerStatus;
@@ -201,9 +254,11 @@ class ExecuteProviderPurchaseService
                 case ProviderTransactionStatus::CONFIRMED:
                     /*
                      * Provider confirmation and encrypted card
-                     * persistence are committed together.
+                     * persistence must commit together.
                      *
-                     * Seller accounting happens later.
+                     * Accounting happens later. Therefore, if
+                     * seller capture fails, the issued card is
+                     * still safely recoverable from our DB.
                      */
                     $soldCard = SoldCard::query()
                         ->where('sale_id', $sale->id)
@@ -230,7 +285,7 @@ class ExecuteProviderPurchaseService
                                 $result->providerCardReference
                         ) {
                             throw new RuntimeException(
-                                'Provider card reference changed after confirmation.'
+                                'Provider card reference changed during reconciliation.'
                             );
                         }
                     }
@@ -244,15 +299,10 @@ class ExecuteProviderPurchaseService
 
                 case ProviderTransactionStatus::FAILED:
                     $locked->status = 'failed';
-                    $locked->failed_at = now();
+                    $locked->failed_at ??= now();
 
-                    /*
-                     * Release is intentionally NOT done here.
-                     * A later workflow service performs the
-                     * financial transition explicitly.
-                     */
                     $sale->status = 'failed';
-                    $sale->failed_at = now();
+                    $sale->failed_at ??= now();
                     $sale->failure_code =
                         $result->errorCode;
                     $sale->failure_message =
@@ -261,30 +311,17 @@ class ExecuteProviderPurchaseService
 
                 case ProviderTransactionStatus::TIMEOUT:
                     $locked->status = 'timeout';
-
                     $sale->status = 'timeout';
                     break;
 
                 case ProviderTransactionStatus::UNKNOWN:
                     $locked->status = 'unknown';
-
                     $sale->status =
                         'unknown_provider_state';
                     break;
 
-                case ProviderTransactionStatus::RECONCILIATION_REQUIRED:
-                    $locked->status =
-                        'reconciliation_required';
-
-                    $sale->status =
-                        'reconciliation_required';
-                    break;
-
                 case ProviderTransactionStatus::PENDING:
-                    /*
-                     * A purchase call must not leave QaNetwork
-                     * in a reusable "processing" state.
-                     */
+                case ProviderTransactionStatus::RECONCILIATION_REQUIRED:
                     $locked->status =
                         'reconciliation_required';
 

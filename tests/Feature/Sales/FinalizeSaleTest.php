@@ -8,6 +8,7 @@ use App\Models\NetworkOwner;
 use App\Models\NetworkProduct;
 use App\Models\ProviderTransaction;
 use App\Models\Sale;
+use App\Models\SoldCard;
 use App\Models\Seller;
 use App\Models\SellerWallet;
 use App\Models\User;
@@ -121,6 +122,27 @@ class FinalizeSaleTest extends TestCase
 
         $transaction->save();
 
+        /*
+         * A provider-confirmed sale must already have
+         * its issued card durably encrypted before
+         * accounting finalization starts.
+         */
+        if ($providerStatus === 'confirmed') {
+            $soldCard = new SoldCard([
+                'sale_id' => $sale->id,
+                'provider_card_reference' =>
+                    'PROVIDER-CARD-1',
+                'sold_at' => now(),
+            ]);
+
+            $soldCard->setCredentials([
+                'username' => '123456',
+                'password' => '654321',
+            ]);
+
+            $soldCard->save();
+        }
+
         $sale->status = $saleStatus;
 
         if ($saleStatus === 'provider_confirmed') {
@@ -161,8 +183,8 @@ class FinalizeSaleTest extends TestCase
             FinalizeConfirmedSaleService::class
         );
 
-        $first = $service->handle($sale, $result);
-        $second = $service->handle($sale, $result);
+        $first = $service->handle($sale);
+        $second = $service->handle($sale);
 
         $sale->refresh();
         $wallet->refresh();
@@ -328,30 +350,37 @@ class FinalizeSaleTest extends TestCase
         }
     }
 
-    public function test_provider_transaction_mismatch_blocks_finalization(): void
+
+    public function test_confirmed_sale_without_durable_card_cannot_finalize(): void
     {
-        [$sale, $wallet] = $this->scenario(
-            'confirmed',
-            'provider_confirmed'
+        [
+            $sale,
+            $wallet,
+        ] = $this->scenario(
+            saleStatus: 'provider_confirmed',
+            providerStatus: 'confirmed',
         );
 
-        $result = PurchaseCardResult::confirmed(
-            providerTransactionId: 'WRONG-TX',
-            credentials: [
-                'username' => '123456',
-                'password' => '654321',
-            ]
-        );
+        /*
+         * Simulate an invalid recovery state:
+         * provider confirmation exists, but the durable card
+         * is missing.
+         */
+        $sale->soldCard()->delete();
 
-        $this->expectException(
-            RuntimeException::class
+        $this->expectException(\RuntimeException::class);
+
+        $this->expectExceptionMessage(
+            'Confirmed provider transaction has no durable sold card.'
         );
 
         try {
-            app(FinalizeConfirmedSaleService::class)
-                ->handle($sale, $result);
+            app(
+                \App\Services\Sales\FinalizeConfirmedSaleService::class
+            )->handle($sale);
         } finally {
             $wallet->refresh();
+            $sale->refresh();
 
             $this->assertSame(
                 '100000.0000',
@@ -363,15 +392,214 @@ class FinalizeSaleTest extends TestCase
                 $wallet->reserved_balance
             );
 
-            $this->assertDatabaseCount(
-                'sold_cards',
-                0
+            $this->assertSame(
+                'provider_confirmed',
+                $sale->status
             );
 
             $this->assertDatabaseCount(
                 'seller_ledger_entries',
                 0
             );
+
+            $this->assertDatabaseMissing(
+                'sold_cards',
+                [
+                    'sale_id' => $sale->id,
+                ]
+            );
         }
     }
+
+
+    public function test_confirmed_card_survives_accounting_failure_and_retry_completes_sale(): void
+    {
+        [
+            $sale,
+            $wallet,
+            $reservation,
+        ] = $this->scenario(
+            saleStatus: 'provider_confirmed',
+            providerStatus: 'confirmed',
+        );
+
+        /*
+         * The provider layer has already committed the issued card.
+         */
+        $soldCard = $sale->soldCard()->firstOrFail();
+
+        $originalCredentials = $soldCard->credentials();
+
+        $this->assertSame(
+            [
+                'username' => '123456',
+                'password' => '654321',
+            ],
+            $originalCredentials
+        );
+
+        /*
+         * Simulate corrupted/local accounting state after provider
+         * confirmation. Capture must fail, but the previously
+         * committed SoldCard must survive.
+         */
+        $wallet->reserved_balance = '0.0000';
+        $wallet->save();
+
+        try {
+            app(
+                \App\Services\Sales\FinalizeConfirmedSaleService::class
+            )->handle($sale);
+
+            $this->fail(
+                'Finalization should fail when reserved balance is insufficient.'
+            );
+        } catch (\Throwable $e) {
+            /*
+             * The exact accounting exception type/message is not
+             * important here. The durability invariants are.
+             */
+        }
+
+        $wallet->refresh();
+        $sale->refresh();
+        $reservation->refresh();
+
+        $this->assertSame(
+            '100000.0000',
+            $wallet->balance
+        );
+
+        $this->assertSame(
+            '0.0000',
+            $wallet->reserved_balance
+        );
+
+        $this->assertSame(
+            'provider_confirmed',
+            $sale->status
+        );
+
+        $this->assertSame(
+            'reserved',
+            $reservation->status
+        );
+
+        $this->assertDatabaseCount(
+            'seller_ledger_entries',
+            0
+        );
+
+        /*
+         * Most important invariant:
+         * accounting rollback did NOT erase the provider-issued card.
+         */
+        $persistedCard = $sale->soldCard()->firstOrFail();
+
+        $this->assertSame(
+            $soldCard->id,
+            $persistedCard->id
+        );
+
+        $this->assertSame(
+            $originalCredentials,
+            $persistedCard->credentials()
+        );
+
+        $rawCredentials = (string) $persistedCard
+            ->getRawOriginal('credentials_encrypted');
+
+        $this->assertStringNotContainsString(
+            '123456',
+            $rawCredentials
+        );
+
+        $this->assertStringNotContainsString(
+            '654321',
+            $rawCredentials
+        );
+
+        /*
+         * Repair the local accounting inconsistency.
+         * No provider purchase/reconciliation is required.
+         */
+        $wallet->reserved_balance = '850.0000';
+        $wallet->save();
+
+        $finalCard = app(
+            \App\Services\Sales\FinalizeConfirmedSaleService::class
+        )->handle($sale);
+
+        $wallet->refresh();
+        $sale->refresh();
+        $reservation->refresh();
+
+        /*
+         * Same issued card; no replacement was created.
+         */
+        $this->assertSame(
+            $persistedCard->id,
+            $finalCard->id
+        );
+
+        $this->assertDatabaseCount(
+            'sold_cards',
+            1
+        );
+
+        $this->assertSame(
+            '99150.0000',
+            $wallet->balance
+        );
+
+        $this->assertSame(
+            '0.0000',
+            $wallet->reserved_balance
+        );
+
+        $this->assertSame(
+            'captured',
+            $reservation->status
+        );
+
+        $this->assertSame(
+            'completed',
+            $sale->status
+        );
+
+        $this->assertDatabaseCount(
+            'seller_ledger_entries',
+            1
+        );
+
+        /*
+         * A second finalization is idempotent.
+         */
+        $retryCard = app(
+            \App\Services\Sales\FinalizeConfirmedSaleService::class
+        )->handle($sale);
+
+        $wallet->refresh();
+
+        $this->assertSame(
+            $finalCard->id,
+            $retryCard->id
+        );
+
+        $this->assertSame(
+            '99150.0000',
+            $wallet->balance
+        );
+
+        $this->assertDatabaseCount(
+            'seller_ledger_entries',
+            1
+        );
+
+        $this->assertDatabaseCount(
+            'sold_cards',
+            1
+        );
+    }
+
 }

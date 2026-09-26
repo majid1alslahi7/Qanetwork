@@ -5,8 +5,6 @@ namespace App\Services\Sales;
 use App\Models\ProviderTransaction;
 use App\Models\Sale;
 use App\Models\SoldCard;
-use App\Providers\Data\PurchaseCardResult;
-use App\Providers\Enums\ProviderTransactionStatus;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
@@ -17,74 +15,84 @@ class FinalizeConfirmedSaleService
     ) {
     }
 
-    public function handle(
-        Sale $sale,
-        PurchaseCardResult $result
-    ): SoldCard {
-        if (
-            $result->status !==
-            ProviderTransactionStatus::CONFIRMED
-        ) {
-            throw new RuntimeException(
-                'Only a confirmed provider result can finalize a successful sale.'
-            );
-        }
-
-        if (empty($result->credentials)) {
-            throw new RuntimeException(
-                'Confirmed sale requires card credentials.'
-            );
-        }
-
-        return DB::transaction(function () use ($sale, $result) {
+    public function handle(Sale $sale): SoldCard
+    {
+        return DB::transaction(function () use ($sale) {
             $lockedSale = Sale::query()
                 ->lockForUpdate()
                 ->findOrFail($sale->id);
 
             /*
-             * Idempotent retry after a fully completed sale.
+             * Completed sales are idempotent, but their durable
+             * accounting/card invariants must still exist.
              */
             if ($lockedSale->status === 'completed') {
-                $existing = $lockedSale->soldCard()->first();
+                $soldCard = $lockedSale->soldCard()
+                    ->first();
 
-                if (! $existing) {
+                if (! $soldCard) {
                     throw new RuntimeException(
                         'Completed sale has no sold card.'
                     );
                 }
 
-                return $existing;
+                $reservation = $lockedSale->reservation()
+                    ->first();
+
+                if (
+                    ! $reservation ||
+                    $reservation->status !== 'captured'
+                ) {
+                    throw new RuntimeException(
+                        'Completed sale has no captured reservation.'
+                    );
+                }
+
+                return $soldCard;
             }
 
-            if ($lockedSale->status !== 'provider_confirmed') {
+            if (
+                $lockedSale->status !==
+                'provider_confirmed'
+            ) {
                 throw new RuntimeException(
                     'Sale must be provider_confirmed before finalization.'
                 );
             }
 
-            $providerTransaction = ProviderTransaction::query()
-                ->lockForUpdate()
-                ->where('sale_id', $lockedSale->id)
-                ->firstOrFail();
+            $providerTransaction =
+                ProviderTransaction::query()
+                    ->lockForUpdate()
+                    ->where(
+                        'sale_id',
+                        $lockedSale->id
+                    )
+                    ->firstOrFail();
 
-            if ($providerTransaction->status !== 'confirmed') {
+            if (
+                $providerTransaction->status !==
+                'confirmed'
+            ) {
                 throw new RuntimeException(
                     'Provider transaction is not confirmed.'
                 );
             }
 
             /*
-             * If both sides supplied a provider transaction ID,
-             * they must describe the same provider transaction.
+             * Provider layer must already have persisted the
+             * issued card. Finalization never reconstructs a
+             * provider response from memory.
              */
-            if (
-                $result->providerTransactionId !== null &&
-                $providerTransaction->provider_transaction_id !== null &&
-                $result->providerTransactionId !==
-                    $providerTransaction->provider_transaction_id
-            ) {
+            $soldCard = SoldCard::query()
+                ->where(
+                    'sale_id',
+                    $lockedSale->id
+                )
+                ->first();
+
+            if (! $soldCard) {
                 throw new RuntimeException(
-                    'Provider transaction identifier mismatch.'
+                    'Confirmed provider transaction has no durable sold card.'
                 );
             }
 
@@ -98,43 +106,17 @@ class FinalizeConfirmedSaleService
                 );
             }
 
-            $soldCard = $lockedSale->soldCard()->first();
-
-            if (! $soldCard) {
-                $soldCard = new SoldCard([
-                    'sale_id' => $lockedSale->id,
-                    'provider_card_reference' =>
-                        $result->providerCardReference,
-                    'sold_at' => now(),
-                ]);
-
-                /*
-                 * credentials_encrypted uses Laravel's encrypted
-                 * cast and is never written to logs/audit text.
-                 */
-                $soldCard->setCredentials(
-                    $result->credentials
-                );
-
-                $soldCard->save();
-            }
-
-            /*
-             * Deterministic key: retrying finalization can never
-             * create a second seller debit.
-             */
             $this->captureService->handle(
                 $reservation,
                 'sale:'.$lockedSale->id.':seller-debit'
             );
 
-            /*
-             * Capture changes sale to accounting_posted.
-             * Reload under the same transaction before completion.
-             */
             $lockedSale->refresh();
 
-            if ($lockedSale->status !== 'accounting_posted') {
+            if (
+                $lockedSale->status !==
+                'accounting_posted'
+            ) {
                 throw new RuntimeException(
                     'Sale accounting was not posted.'
                 );
