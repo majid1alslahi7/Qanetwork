@@ -20,6 +20,8 @@ class ProviderTransaction extends Model
     protected function casts(): array
     {
         return [
+            'failed_at' => 'datetime',
+            'request_started_at' => 'datetime',
             'attempt_count' => 'integer',
             'request_started_at' => 'datetime',
             'response_received_at' => 'datetime',
