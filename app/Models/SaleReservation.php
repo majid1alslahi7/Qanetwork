@@ -7,29 +7,32 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-class SaleFinancial extends Model
+class SaleReservation extends Model
 {
     use HasFactory, HasUlids;
 
-    /*
-     * Financial snapshots are created only by trusted
-     * domain services, never directly from request input.
-     */
     protected $guarded = ['id'];
 
     protected function casts(): array
     {
         return [
-            'face_value' => 'decimal:4',
-            'provider_amount' => 'decimal:4',
-            'seller_commission' => 'decimal:4',
-            'platform_commission' => 'decimal:4',
-            'seller_net_amount' => 'decimal:4',
+            'amount' => 'decimal:4',
+            'reserved_at' => 'datetime',
+            'captured_at' => 'datetime',
+            'released_at' => 'datetime',
         ];
     }
 
     public function sale(): BelongsTo
     {
         return $this->belongsTo(Sale::class);
+    }
+
+    public function wallet(): BelongsTo
+    {
+        return $this->belongsTo(
+            SellerWallet::class,
+            'seller_wallet_id'
+        );
     }
 }
