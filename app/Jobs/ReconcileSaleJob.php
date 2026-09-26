@@ -5,13 +5,14 @@ namespace App\Jobs;
 use App\Models\ProviderTransaction;
 use App\Models\Sale;
 use App\Services\Sales\ReconcileSaleService;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
-class ReconcileSaleJob implements ShouldQueue
+class ReconcileSaleJob implements ShouldBeUnique, ShouldQueue
 {
     use Queueable;
 
@@ -37,6 +38,11 @@ class ReconcileSaleJob implements ShouldQueue
         public readonly string $saleId
     ) {
         $this->onQueue('reconciliation');
+    }
+
+    public function uniqueId(): string
+    {
+        return 'reconcile-sale:'.$this->saleId;
     }
 
     public function middleware(): array
