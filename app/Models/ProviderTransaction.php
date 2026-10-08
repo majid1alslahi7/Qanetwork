@@ -26,7 +26,6 @@ class ProviderTransaction extends Model
             'reconciliation_attempt_count' => 'integer',
             'last_reconciliation_at' => 'datetime',
             'manual_review_required_at' => 'datetime',
-            'request_started_at' => 'datetime',
             'response_received_at' => 'datetime',
             'confirmed_at' => 'datetime',
             'last_checked_at' => 'datetime',

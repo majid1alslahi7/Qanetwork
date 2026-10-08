@@ -28,6 +28,15 @@ class ApproveSellerDepositService
                 ->firstOrFail();
 
             if ($lockedDeposit->status === 'approved') {
+                $posted = SellerLedgerEntry::query()->where('idempotency_key', 'deposit:'.$lockedDeposit->id.':approved')->first();
+                if ($posted === null || $posted->direction !== 'credit' || $posted->reference_type !== 'seller_deposit'
+                    || $posted->reference_id !== $lockedDeposit->id || $posted->seller_id !== $lockedDeposit->seller_id
+                    || $posted->seller_wallet_id !== $lockedDeposit->seller_wallet_id
+                    || $posted->currency_code !== $lockedDeposit->currency_code
+                    || bccomp($posted->amount, $lockedDeposit->amount, 4) !== 0) {
+                    throw new RuntimeException('Approved deposit has inconsistent accounting.');
+                }
+
                 return $lockedDeposit->fresh();
             }
 
@@ -62,7 +71,7 @@ class ApproveSellerDepositService
             }
 
             $idempotencyKey =
-                'deposit:' . $lockedDeposit->id . ':approved';
+                'deposit:'.$lockedDeposit->id.':approved';
 
             $existingEntry = SellerLedgerEntry::query()
                 ->where('idempotency_key', $idempotencyKey)
@@ -83,6 +92,10 @@ class ApproveSellerDepositService
                 (string) $lockedDeposit->amount,
                 4
             );
+            if (bccomp((string) $lockedDeposit->amount, '0', 4) <= 0
+                || bccomp($newBalance, '9999999999999999.9999', 4) > 0) {
+                throw new RuntimeException('Deposit amount or resulting balance is invalid.');
+            }
 
             $now = now();
 

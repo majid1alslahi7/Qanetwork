@@ -46,6 +46,11 @@ class Seller extends Model
         return $this->hasMany(SellerDeposit::class);
     }
 
+    public function sales(): HasMany
+    {
+        return $this->hasMany(Sale::class);
+    }
+
     public function ledgerEntries(): HasMany
     {
         return $this->hasMany(SellerLedgerEntry::class);

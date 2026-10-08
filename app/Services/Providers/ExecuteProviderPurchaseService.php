@@ -16,8 +16,7 @@ class ExecuteProviderPurchaseService
 {
     public function __construct(
         private readonly ProviderAdapterRegistry $registry
-    ) {
-    }
+    ) {}
 
     public function handle(
         ProviderTransaction $transaction
@@ -74,6 +73,7 @@ class ExecuteProviderPurchaseService
             }
 
             $product = $sale->product()->firstOrFail();
+            $financial = $sale->financial()->firstOrFail();
 
             $locked->status = 'processing';
             $locked->attempt_count =
@@ -88,18 +88,12 @@ class ExecuteProviderPurchaseService
                 'transaction_id' => $locked->id,
                 'connection' => $connection,
                 'request' => new PurchaseCardRequest(
-                    internalTransactionId:
-                        $locked->internal_transaction_id,
-                    idempotencyKey:
-                        $locked->idempotency_key,
-                    externalProductId:
-                        $product->external_product_id,
-                    saleId:
-                        $sale->id,
-                    expectedFaceValue:
-                        (string) $product->face_value,
-                    currencyCode:
-                        $sale->currency_code,
+                    internalTransactionId: $locked->internal_transaction_id,
+                    idempotencyKey: $locked->idempotency_key,
+                    externalProductId: $product->external_product_id,
+                    saleId: $sale->id,
+                    expectedFaceValue: (string) $financial->face_value,
+                    currencyCode: $sale->currency_code,
                 ),
             ];
         }, 3);
@@ -154,12 +148,9 @@ class ExecuteProviderPurchaseService
              * We cannot safely complete or release the sale.
              */
             $result = PurchaseCardResult::unknown(
-                providerTransactionId:
-                    $result->providerTransactionId,
-                providerStatus:
-                    $result->providerStatus,
-                errorMessage:
-                    'Provider confirmed transaction without card credentials.'
+                providerTransactionId: $result->providerTransactionId,
+                providerStatus: $result->providerStatus,
+                errorMessage: 'Provider confirmed transaction without card credentials.'
             );
         }
 
@@ -212,8 +203,7 @@ class ExecuteProviderPurchaseService
                     if (! $soldCard) {
                         $soldCard = new SoldCard([
                             'sale_id' => $sale->id,
-                            'provider_card_reference' =>
-                                $result->providerCardReference,
+                            'provider_card_reference' => $result->providerCardReference,
                             'sold_at' => now(),
                         ]);
 
@@ -299,5 +289,4 @@ class ExecuteProviderPurchaseService
             return $result;
         }, 3);
     }
-
 }

@@ -20,6 +20,7 @@ use App\Services\Providers\ExecuteProviderPurchaseService;
 use App\Services\Providers\PrepareProviderTransactionService;
 use App\Services\Sales\ReserveSaleBalanceService;
 use App\Services\Sales\SaleFinancialSnapshotService;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -114,11 +115,11 @@ class ExecuteProviderPurchaseTest extends TestCase
     private function serviceWithResult(
         PurchaseCardResult $result
     ): ExecuteProviderPurchaseService {
-        $adapter = new class($result) implements ProviderAdapter {
+        $adapter = new class($result) implements ProviderAdapter
+        {
             public function __construct(
                 private PurchaseCardResult $result
-            ) {
-            }
+            ) {}
 
             public function healthCheck(
                 NetworkConnection $connection
@@ -163,7 +164,7 @@ class ExecuteProviderPurchaseTest extends TestCase
             }
         };
 
-        $registry = new ProviderAdapterRegistry();
+        $registry = new ProviderAdapterRegistry;
         $registry->register('test-provider', $adapter);
 
         return new ExecuteProviderPurchaseService(
@@ -226,6 +227,55 @@ class ExecuteProviderPurchaseTest extends TestCase
             1,
             $transaction->attempt_count
         );
+    }
+
+    public function test_purchase_uses_the_sale_price_when_the_product_price_changes(): void
+    {
+        [$sale, $wallet, , $transaction] = $this->setupSale();
+        $sale->product()->firstOrFail()->update(['face_value' => '2000.0000']);
+
+        $adapter = $this->mock(ProviderAdapter::class);
+        $adapter->shouldReceive('purchaseCard')
+            ->once()
+            ->withArgs(function (NetworkConnection $connection, PurchaseCardRequest $request) use ($sale): bool {
+                $this->assertSame($sale->id, $request->saleId);
+                $this->assertSame('1000.0000', $request->expectedFaceValue);
+
+                return true;
+            })
+            ->andReturn(PurchaseCardResult::confirmed(
+                providerTransactionId: 'FROZEN-PRICE',
+                credentials: ['username' => 'card-user', 'password' => 'card-password'],
+            ));
+
+        $registry = new ProviderAdapterRegistry;
+        $registry->register('test-provider', $adapter);
+        (new ExecuteProviderPurchaseService($registry))->handle($transaction);
+
+        $this->assertSame('provider_confirmed', $sale->fresh()->status);
+        $this->assertSame('850.0000', $wallet->fresh()->reserved_balance);
+    }
+
+    public function test_purchase_without_a_financial_snapshot_does_not_contact_the_provider(): void
+    {
+        [$sale, $wallet, , $transaction] = $this->setupSale();
+        $sale->financial()->delete();
+
+        $adapter = $this->mock(ProviderAdapter::class);
+        $adapter->shouldNotReceive('purchaseCard');
+        $registry = new ProviderAdapterRegistry;
+        $registry->register('test-provider', $adapter);
+
+        $this->expectException(ModelNotFoundException::class);
+
+        try {
+            (new ExecuteProviderPurchaseService($registry))->handle($transaction);
+        } finally {
+            $this->assertSame('created', $transaction->fresh()->status);
+            $this->assertSame(0, $transaction->fresh()->attempt_count);
+            $this->assertSame('balance_reserved', $sale->fresh()->status);
+            $this->assertSame('850.0000', $wallet->fresh()->reserved_balance);
+        }
     }
 
     public function test_explicit_failure_is_recorded_without_releasing_money(): void
@@ -337,8 +387,7 @@ class ExecuteProviderPurchaseTest extends TestCase
 
         $service = $this->serviceWithResult(
             new PurchaseCardResult(
-                status:
-                    ProviderTransactionStatus::CONFIRMED,
+                status: ProviderTransactionStatus::CONFIRMED,
                 providerTransactionId: 'P-TX-3',
                 credentials: null,
                 providerStatus: 'success'

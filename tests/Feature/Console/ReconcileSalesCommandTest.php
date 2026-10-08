@@ -132,8 +132,7 @@ class ReconcileSalesCommandTest extends TestCase
             'processing' => 'processing_provider',
             'timeout' => 'timeout',
             'unknown' => 'unknown_provider_state',
-            'reconciliation_required' =>
-                'reconciliation_required',
+            'reconciliation_required' => 'reconciliation_required',
             'confirmed' => 'provider_confirmed',
             'failed' => 'failed',
             default => 'balance_reserved',
@@ -149,6 +148,9 @@ class ReconcileSalesCommandTest extends TestCase
         Queue::fake();
 
         $processing = $this->transaction('processing');
+        $processing->request_started_at = now()->subMinutes(3);
+        $processing->save();
+        $liveProcessing = $this->transaction('processing');
         $timeout = $this->transaction('timeout');
         $unknown = $this->transaction('unknown');
 
@@ -185,8 +187,7 @@ class ReconcileSalesCommandTest extends TestCase
         ] as $transaction) {
             Queue::assertPushed(
                 ReconcileSaleJob::class,
-                fn (ReconcileSaleJob $job): bool =>
-                    $job->saleId === $transaction->sale_id
+                fn (ReconcileSaleJob $job): bool => $job->saleId === $transaction->sale_id
             );
         }
 
@@ -196,11 +197,11 @@ class ReconcileSalesCommandTest extends TestCase
             $created,
             $manualReview,
             $maxAttempts,
+            $liveProcessing,
         ] as $transaction) {
             Queue::assertNotPushed(
                 ReconcileSaleJob::class,
-                fn (ReconcileSaleJob $job): bool =>
-                    $job->saleId === $transaction->sale_id
+                fn (ReconcileSaleJob $job): bool => $job->saleId === $transaction->sale_id
             );
         }
 

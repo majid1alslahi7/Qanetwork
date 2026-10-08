@@ -46,9 +46,9 @@ class NetworkConnection extends Model
             'connect_timeout' => 'integer',
             'request_timeout' => 'integer',
 
-            'last_health_check_at' => 'datetime',
-            'last_healthy_at' => 'datetime',
-            'last_unhealthy_at' => 'datetime',
+            'last_checked_at' => 'datetime',
+            'last_success_at' => 'datetime',
+            'last_failure_at' => 'datetime',
         ];
     }
 

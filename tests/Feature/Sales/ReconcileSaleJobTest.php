@@ -126,15 +126,15 @@ class ReconcileSaleJobTest extends TestCase
         $sale->status = $saleStatus;
         $sale->save();
 
-        $adapter = new class($reconciliationResult)
-            implements ProviderAdapter {
+        $adapter = new class($reconciliationResult) implements ProviderAdapter
+        {
             public int $purchaseCalls = 0;
+
             public int $checkCalls = 0;
 
             public function __construct(
                 private readonly TransactionStatusResult $result
-            ) {
-            }
+            ) {}
 
             public function healthCheck(
                 NetworkConnection $connection
@@ -183,7 +183,7 @@ class ReconcileSaleJobTest extends TestCase
             }
         };
 
-        $registry = new ProviderAdapterRegistry();
+        $registry = new ProviderAdapterRegistry;
 
         $registry->register(
             'reconcile-job-test',
@@ -221,10 +221,8 @@ class ReconcileSaleJobTest extends TestCase
             $service,
         ] = $this->scenario(
             new TransactionStatusResult(
-                status:
-                    ProviderTransactionStatus::UNKNOWN,
-                providerTransactionId:
-                    'PROVIDER-JOB-UNKNOWN',
+                status: ProviderTransactionStatus::UNKNOWN,
+                providerTransactionId: 'PROVIDER-JOB-UNKNOWN',
                 providerStatus: 'pending',
                 errorCode: 'UNKNOWN',
                 errorMessage: 'Still unknown.',
@@ -324,6 +322,21 @@ class ReconcileSaleJobTest extends TestCase
         ];
     }
 
+    public function test_recent_processing_waits_without_provider_call_or_reconciliation_attempt(): void
+    {
+        [$sale, $wallet, $transaction, $adapter, $service] = $this->scenario(
+            new TransactionStatusResult(status: ProviderTransactionStatus::UNKNOWN),
+            transactionStatus: 'processing', saleStatus: 'processing_provider',
+        );
+        $job = (new ReconcileSaleJob($sale->id))->withFakeQueueInteractions();
+        $job->handle($service);
+        $job->assertReleased(120);
+        $this->assertSame(0, $adapter->checkCalls);
+        $this->assertSame(0, $adapter->purchaseCalls);
+        $this->assertSame(0, $transaction->fresh()->reconciliation_attempt_count);
+        $this->assertSame('850.0000', $wallet->fresh()->reserved_balance);
+    }
+
     public function test_fifth_uncertain_attempt_requires_manual_review_without_release(): void
     {
         [
@@ -334,10 +347,8 @@ class ReconcileSaleJobTest extends TestCase
             $service,
         ] = $this->scenario(
             new TransactionStatusResult(
-                status:
-                    ProviderTransactionStatus::UNKNOWN,
-                providerTransactionId:
-                    'PROVIDER-JOB-FIFTH-UNKNOWN',
+                status: ProviderTransactionStatus::UNKNOWN,
+                providerTransactionId: 'PROVIDER-JOB-FIFTH-UNKNOWN',
                 providerStatus: 'pending',
                 errorCode: 'UNKNOWN',
                 errorMessage: 'Still unknown.',
@@ -417,12 +428,9 @@ class ReconcileSaleJobTest extends TestCase
             $service,
         ] = $this->scenario(
             new TransactionStatusResult(
-                status:
-                    ProviderTransactionStatus::CONFIRMED,
-                providerTransactionId:
-                    'PROVIDER-JOB-CONFIRMED',
-                providerCardReference:
-                    'CARD-JOB-CONFIRMED',
+                status: ProviderTransactionStatus::CONFIRMED,
+                providerTransactionId: 'PROVIDER-JOB-CONFIRMED',
+                providerCardReference: 'CARD-JOB-CONFIRMED',
                 credentials: [
                     'username' => 'JOB-123456',
                     'password' => 'JOB-654321',
@@ -504,10 +512,8 @@ class ReconcileSaleJobTest extends TestCase
             $service,
         ] = $this->scenario(
             new TransactionStatusResult(
-                status:
-                    ProviderTransactionStatus::FAILED,
-                providerTransactionId:
-                    'PROVIDER-JOB-FAILED',
+                status: ProviderTransactionStatus::FAILED,
+                providerTransactionId: 'PROVIDER-JOB-FAILED',
                 providerStatus: 'failed',
                 errorCode: 'NOT_FOUND',
                 errorMessage: 'Provider confirms failure.',
@@ -587,8 +593,7 @@ class ReconcileSaleJobTest extends TestCase
             $service,
         ] = $this->scenario(
             new TransactionStatusResult(
-                status:
-                    ProviderTransactionStatus::UNKNOWN,
+                status: ProviderTransactionStatus::UNKNOWN,
             ),
             reconciliationAttempts: 5,
             transactionStatus: 'unknown',

@@ -1,58 +1,64 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# QaNetwork
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+باك إند Laravel لمنصة إدارة وبيع بطاقات الإنترنت، متصل بتطبيق أندرويد مستقل. الدومين المعتمد للاستضافة: `https://alssemam.live`، ومسار API الأساسي: `/api/v1`.
 
-## About Laravel
+## الوظائف
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+- مصادقة Sanctum وصلاحيات منفصلة للإدارة والبائع ومالك الشبكة.
+- إدارة الشبكات والاتصالات والمنتجات والتسعير والعمولات.
+- محافظ وإيداعات ومبيعات مع منع تكرار الطلبات وحجز الرصيد وتسوية العمليات غير المؤكدة.
+- تكامل MikroTik Hotspot وUser Manager، وفحص صحة الاتصالات.
+- قيود محاسبية وتسويات وتقارير وسجل تدقيق ومراقبة المجدول وطوابير المهام.
+- مراجعة يدوية للمبيعات واستعادة المهام المتأخرة وبنية لتوصيل البطاقات عبر SMS.
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+## التشغيل المحلي
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+المشروع يُطوّر على PHP 8.5 وLaravel 13. تعتمد الإصدارات الدقيقة على `composer.lock`. يلزم Composer وقاعدة بيانات تدعمها Laravel.
 
-## Learning Laravel
-
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
-
-In addition, [Laracasts](https://laracasts.com) contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
-
-You can also watch bite-sized lessons with real-world projects on [Laravel Learn](https://laravel.com/learn), where you will be guided through building a Laravel application from scratch while learning PHP fundamentals.
-
-## Agentic Development
-
-Laravel's predictable structure and conventions make it ideal for AI coding agents like Claude Code, Cursor, and GitHub Copilot. Install [Laravel Boost](https://laravel.com/docs/ai) to supercharge your AI workflow:
-
-```bash
-composer require laravel/boost --dev
-
-php artisan boost:install
+```sh
+composer install
+cp .env.example .env
+php artisan key:generate
 ```
 
-Boost provides your agent 15+ tools and skills that help agents build Laravel applications while following best practices.
+اضبط اتصال قاعدة البيانات في `.env`. عند استخدام SQLite أنشئ الملف `database/database.sqlite`. للتطوير المحلي اضبط `APP_URL=http://localhost:8000` ثم شغّل:
 
-## Contributing
+```sh
+php artisan migrate --no-interaction
+php artisan serve
+```
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+لإنشاء أول حساب إدارة، استخدم الأمر التفاعلي؛ يطلب كلمة المرور بشكل مخفي:
 
-## Code of Conduct
+```sh
+php artisan users:create-admin admin@alssemam.live
+```
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+## المهام الخلفية
 
-## Security Vulnerabilities
+الإعداد الافتراضي يستخدم قاعدة البيانات للطوابير والكاش. شغّل عامل الطوابير والمجدول في عمليتين منفصلتين أثناء التطوير:
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+```sh
+php artisan queue:work --queue=sales,reconciliation,network-health,delivery,default --timeout=60 --tries=3
+php artisan schedule:work
+```
 
-## License
+على الاستضافة، وجّه جذر الويب إلى `public`، واضبط `APP_ENV=production` و`APP_DEBUG=false` و`APP_URL=https://alssemam.live` وفعّل HTTPS. يجب تشغيل عامل الطوابير بصورة مستمرة عبر مدير عمليات، واستدعاء `php artisan schedule:run` كل دقيقة عبر Cron من مجلد المشروع. تعتمد طريقة تشغيل العامل على إمكانات الاستضافة.
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+لا ترفع `.env` أو مفاتيح التشفير أو بيانات الإنتاج. احتفظ بـ`APP_KEY` والنسخ الاحتياطية في مكان آمن؛ تغيير المفتاح يفقد القدرة على فك تشفير بيانات الاتصال المخزنة.
+
+## التحقق
+
+```sh
+php artisan test --compact
+```
+
+آخر تشغيل كامل قبل الرفع: **432 اختبارًا ناجحًا و2388 تحققًا**.
+
+## حالة التكامل
+
+يلزم إكمال إعداد الاستضافة وقاعدة بيانات الإنتاج وبيانات اتصال الشبكات ومزوّد SMS الفعلي واختبار البيع على الأنظمة الحقيقية قبل الإطلاق. تحديد الدومين في الإعدادات لا يعني نشر التطبيق أو إعداد DNS وشهادة HTTPS.
+
+هذا المستودع يخص Laravel فقط. تطبيق أندرويد موجود في مشروع مستقل. وضع معاينة الواجهات بدون تسجيل دخول خاص بنسخة تطوير أندرويد ويستخدم بيانات تجريبية، ولا يفتح الدخول إلى API.
+
+للاطلاع على تصور المشروع المفصل، راجع [QaNetwork_README.md](QaNetwork_README.md)؛ يمثل وثيقة الفكرة وقد يتضمن مراحل مستقبلية.

@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Sale extends Model
@@ -79,5 +80,15 @@ class Sale extends Model
     public function reservation(): HasOne
     {
         return $this->hasOne(SaleReservation::class);
+    }
+
+    public function manualReviews(): HasMany
+    {
+        return $this->hasMany(ManualSaleReview::class);
+    }
+
+    public function delivery(): HasOne
+    {
+        return $this->hasOne(CardDelivery::class);
     }
 }

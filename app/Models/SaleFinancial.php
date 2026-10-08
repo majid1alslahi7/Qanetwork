@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Concerns\HasUlids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use LogicException;
 
 class SaleFinancial extends Model
 {
@@ -31,5 +32,11 @@ class SaleFinancial extends Model
     public function sale(): BelongsTo
     {
         return $this->belongsTo(Sale::class);
+    }
+
+    protected static function booted(): void
+    {
+        static::updating(fn () => throw new LogicException('Sale financial snapshots cannot be changed.'));
+        static::deleting(fn () => throw new LogicException('Sale financial snapshots cannot be deleted.'));
     }
 }

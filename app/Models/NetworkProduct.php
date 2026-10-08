@@ -50,4 +50,9 @@ class NetworkProduct extends Model
             'network_product_id'
         );
     }
+
+    public function pricingRules(): HasMany
+    {
+        return $this->hasMany(PricingRule::class);
+    }
 }

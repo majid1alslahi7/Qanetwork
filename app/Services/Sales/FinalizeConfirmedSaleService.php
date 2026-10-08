@@ -11,9 +11,9 @@ use RuntimeException;
 class FinalizeConfirmedSaleService
 {
     public function __construct(
-        private readonly CaptureSaleReservationService $captureService
-    ) {
-    }
+        private readonly CaptureSaleReservationService $captureService,
+        private readonly PostSaleAccountingService $accountingService,
+    ) {}
 
     public function handle(Sale $sale): SoldCard
     {
@@ -48,13 +48,12 @@ class FinalizeConfirmedSaleService
                     );
                 }
 
+                $this->accountingService->handle($lockedSale);
+
                 return $soldCard;
             }
 
-            if (
-                $lockedSale->status !==
-                'provider_confirmed'
-            ) {
+            if (! in_array($lockedSale->status, ['provider_confirmed', 'accounting_posted'], true)) {
                 throw new RuntimeException(
                     'Sale must be provider_confirmed before finalization.'
                 );
@@ -100,16 +99,24 @@ class FinalizeConfirmedSaleService
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            if ($reservation->status !== 'reserved') {
+            $expectedReservationStatus = $lockedSale->status === 'accounting_posted' ? 'captured' : 'reserved';
+            if ($reservation->status !== $expectedReservationStatus) {
                 throw new RuntimeException(
                     'Confirmed sale requires an active reservation.'
                 );
             }
 
-            $this->captureService->handle(
+            $entry = $this->captureService->handle(
                 $reservation,
                 'sale:'.$lockedSale->id.':seller-debit'
             );
+            $financial = $lockedSale->financial()->firstOrFail();
+            if ($entry->direction !== 'debit' || $entry->seller_id !== $lockedSale->seller_id
+                || $entry->seller_wallet_id !== $lockedSale->seller_wallet_id
+                || $entry->currency_code !== $lockedSale->currency_code
+                || bccomp($entry->amount, $financial->seller_net_amount, 4) !== 0 || $entry->reversals()->exists()) {
+                throw new RuntimeException('Sale accounting does not match the financial snapshot.');
+            }
 
             $lockedSale->refresh();
 
@@ -123,6 +130,7 @@ class FinalizeConfirmedSaleService
             }
 
             $lockedSale->status = 'completed';
+            $this->accountingService->handle($lockedSale);
             $lockedSale->completed_at = now();
             $lockedSale->save();
 

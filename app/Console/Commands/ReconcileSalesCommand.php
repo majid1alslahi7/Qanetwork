@@ -44,6 +44,14 @@ class ReconcileSalesCommand extends Command
                 'unknown',
                 'reconciliation_required',
             ])
+            ->where(function ($query): void {
+                $query->where('status', '!=', 'processing')->orWhere(function ($processing): void {
+                    $processing->where('request_started_at', '<=', now()->subMinutes(2))
+                        ->orWhere(function ($missing): void {
+                            $missing->whereNull('request_started_at')->where('created_at', '<=', now()->subMinutes(2));
+                        });
+                });
+            })
             ->whereNull('manual_review_required_at')
             ->where(
                 'reconciliation_attempt_count',

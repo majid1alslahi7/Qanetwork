@@ -49,8 +49,9 @@ class ReconcileSaleJob implements ShouldBeUnique, ShouldQueue
     {
         return [
             (new WithoutOverlapping(
-                'reconcile-sale:'.$this->saleId
+                'sale-provider:'.$this->saleId
             ))
+                ->shared()
                 ->releaseAfter(60)
                 ->expireAfter(120),
         ];
@@ -72,13 +73,7 @@ class ReconcileSaleJob implements ShouldBeUnique, ShouldQueue
             /*
              * Terminal local states need no provider call.
              */
-            if (
-                $sale->status === 'completed' ||
-                (
-                    $sale->status === 'failed' &&
-                    $transaction->status === 'failed'
-                )
-            ) {
+            if ($sale->status === 'completed') {
                 return [
                     'action' => 'stop',
                     'attempt' => null,
@@ -104,6 +99,11 @@ class ReconcileSaleJob implements ShouldBeUnique, ShouldQueue
                     'action' => 'stop',
                     'attempt' => null,
                 ];
+            }
+
+            if ($transaction->status === 'processing'
+                && ($transaction->request_started_at ?? $transaction->created_at)->gt(now()->subMinutes(2))) {
+                return ['action' => 'wait', 'attempt' => null];
             }
 
             /*
@@ -156,12 +156,17 @@ class ReconcileSaleJob implements ShouldBeUnique, ShouldQueue
 
             return [
                 'action' => 'reconcile',
-                'attempt' =>
-                    $transaction->reconciliation_attempt_count,
+                'attempt' => $transaction->reconciliation_attempt_count,
             ];
         });
 
         if ($state['action'] === 'stop') {
+            return;
+        }
+
+        if ($state['action'] === 'wait') {
+            $this->release(120);
+
             return;
         }
 

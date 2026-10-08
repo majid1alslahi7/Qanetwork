@@ -106,6 +106,7 @@ class SaleFinancialSnapshotService
 
         return SaleFinancial::query()->create([
             'sale_id' => $sale->id,
+            'network_owner_id' => $sale->network()->firstOrFail()->network_owner_id,
             'face_value' => $faceValue,
             'provider_amount' => $providerAmount,
             'seller_commission' => $sellerCommission,

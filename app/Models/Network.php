@@ -17,7 +17,7 @@ class Network extends Model
         'code',
         'name',
         'display_name',
-        'country',
+        'country_code',
         'city',
         'timezone',
         'currency_code',
@@ -29,8 +29,8 @@ class Network extends Model
         return [
             'sales_enabled' => 'boolean',
             'last_health_check_at' => 'datetime',
-            'last_healthy_at' => 'datetime',
-            'last_unhealthy_at' => 'datetime',
+            'last_success_at' => 'datetime',
+            'last_failure_at' => 'datetime',
             'activated_at' => 'datetime',
             'suspended_at' => 'datetime',
         ];
