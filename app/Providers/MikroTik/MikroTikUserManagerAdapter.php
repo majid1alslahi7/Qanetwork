@@ -97,7 +97,7 @@ final class MikroTikUserManagerAdapter implements ProviderAdapter
                 '/user-manager/user-profile/add', '=user='.$username, '=profile='.$request->externalProductId,
             ]);
             $profiles = $this->findUserProfiles($config, $username);
-            if (! $this->validProfile($profiles, $username, $request->externalProductId)) {
+            if (! $this->validProfile($config, $profiles, $username, $request->externalProductId)) {
                 return $this->purchaseResult($this->unresolved('User Manager profile assignment requires manual review.'));
             }
             $this->client->execute($config, ['/user-manager/user/set', '=.id='.$userId, '=disabled=no']);
@@ -170,7 +170,7 @@ final class MikroTikUserManagerAdapter implements ProviderAdapter
     private function findUserProfiles(RouterOsConnectionConfig $config, string $username): array
     {
         return $this->client->execute($config, [
-            '/user-manager/user-profile/print', '=.proplist=.id,user,profile,state', '?user='.$username,
+            '/user-manager/user-profile/print', '=.proplist=.id,user,profile,state,end-time', '?user='.$username,
         ])->rows;
     }
 
@@ -191,7 +191,7 @@ final class MikroTikUserManagerAdapter implements ProviderAdapter
         }
         $profiles = $this->findUserProfiles($config, $username);
         $profile = $profiles[0]['profile'] ?? '';
-        if (! $this->validProfile($profiles, $username, $profile)
+        if (! $this->validProfile($config, $profiles, $username, $profile)
             || ($expectedProfile !== null && $expectedProfile !== $profile)) {
             return $this->unresolved('User Manager profile assignment requires manual review.');
         }
@@ -221,12 +221,27 @@ final class MikroTikUserManagerAdapter implements ProviderAdapter
     }
 
     /** @param list<array<string, string>> $profiles */
-    private function validProfile(array $profiles, string $username, string $profile): bool
+    private function validProfile(RouterOsConnectionConfig $config, array $profiles, string $username, string $profile): bool
     {
-        return $profile !== '' && count($profiles) === 1
-            && ($profiles[0]['user'] ?? null) === $username && ($profiles[0]['profile'] ?? null) === $profile
-            && ($profiles[0]['.id'] ?? '') !== ''
-            && in_array($profiles[0]['state'] ?? '', ['running', 'running active', 'running-active'], true);
+        if ($profile === '' || count($profiles) !== 1
+            || ($profiles[0]['user'] ?? null) !== $username || ($profiles[0]['profile'] ?? null) !== $profile
+            || ($profiles[0]['.id'] ?? '') === '') {
+            return false;
+        }
+        if (in_array($profiles[0]['state'] ?? '', ['running', 'running active', 'running-active'], true)) {
+            return true;
+        }
+        if (($profiles[0]['state'] ?? null) !== 'waiting'
+            || ($profiles[0]['end-time'] ?? null) !== 'not-yet-running') {
+            return false;
+        }
+
+        $reply = $this->client->execute($config, [
+            '/user-manager/profile/print', '=.proplist=name,starts-when', '?name='.$profile,
+        ]);
+
+        return count($reply->rows) === 1 && ($reply->rows[0]['name'] ?? null) === $profile
+            && ($reply->rows[0]['starts-when'] ?? null) === 'first-auth';
     }
 
     private function validateTransactionId(string $id): void

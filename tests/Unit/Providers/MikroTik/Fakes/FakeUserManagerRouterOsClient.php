@@ -31,7 +31,9 @@ final class FakeUserManagerRouterOsClient implements RouterOsClient
 
     public bool $persistBeforeFailure = true;
 
-    public string $assignedState = 'running';
+    public string $assignedState = 'waiting';
+
+    public string $startsWhen = 'first-auth';
 
     public bool $hidePasswords = false;
 
@@ -61,7 +63,7 @@ final class FakeUserManagerRouterOsClient implements RouterOsClient
                 'use-profiles' => $this->useProfiles ? 'true' : 'false',
             ]], []),
             '/user-manager/profile/print' => new RouterOsReply(array_values(array_map(
-                fn ($name) => ['name' => $name],
+                fn ($name) => ['name' => $name, 'starts-when' => $this->startsWhen],
                 array_filter($this->profiles, fn ($name) => ! isset($query['name']) || $query['name'] === $name),
             )), []),
             '/user-manager/user/print' => $this->readUsers($query['name']),
@@ -112,7 +114,8 @@ final class FakeUserManagerRouterOsClient implements RouterOsClient
     private function addProfile(array $attributes): RouterOsReply
     {
         $id = '*p'.(count($this->userProfiles) + 1);
-        $this->userProfiles[] = [...$attributes, '.id' => $id, 'state' => $this->assignedState];
+        $this->userProfiles[] = [...$attributes, '.id' => $id, 'state' => $this->assignedState,
+            'end-time' => $this->assignedState === 'waiting' ? 'not-yet-running' : ''];
 
         return new RouterOsReply([], ['ret' => $id]);
     }

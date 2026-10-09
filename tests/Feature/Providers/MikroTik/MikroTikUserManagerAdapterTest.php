@@ -30,10 +30,13 @@ class MikroTikUserManagerAdapterTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_purchase_assigns_one_profile_before_enabling_user_and_replay_is_read_only(): void
+    #[DataProvider('issuableProfiles')]
+    public function test_purchase_assigns_one_profile_before_enabling_user_and_replay_is_read_only(string $state, string $startsWhen): void
     {
         [$connection] = $this->catalog();
         $client = new FakeUserManagerRouterOsClient;
+        $client->assignedState = $state;
+        $client->startsWhen = $startsWhen;
         $adapter = $this->adapter($client);
 
         $purchase = $adapter->purchaseCard($connection, $this->request());
@@ -49,6 +52,25 @@ class MikroTikUserManagerAdapterTest extends TestCase
         $this->assertSame('false', $client->users[0]['disabled']);
         $this->assertSame('day', $client->userProfiles[0]['profile']);
         $this->assertFalse($this->hasWrites($client->commands));
+    }
+
+    public static function issuableProfiles(): array
+    {
+        return [['waiting', 'first-auth'], ['running', 'assigned'], ['running active', 'assigned'], ['running-active', 'assigned']];
+    }
+
+    public function test_waiting_profile_cannot_enable_a_user_when_its_start_mode_is_not_first_auth(): void
+    {
+        [$connection] = $this->catalog();
+        $client = new FakeUserManagerRouterOsClient;
+        $client->startsWhen = 'assigned';
+
+        $result = $this->adapter($client)->purchaseCard($connection, $this->request());
+
+        $this->assertSame(ProviderTransactionStatus::RECONCILIATION_REQUIRED, $result->status);
+        $this->assertNull($result->credentials);
+        $this->assertSame('true', $client->users[0]['disabled']);
+        $this->assertNotContains('/user-manager/user/set', $client->commands);
     }
 
     #[DataProvider('interruptedStages')]
@@ -130,6 +152,9 @@ class MikroTikUserManagerAdapterTest extends TestCase
             'unexpected attributes' => [['attributes' => 'arbitrary'], []],
             'different profile' => [[], ['profile' => 'other']],
             'expired profile' => [[], ['state' => 'used']],
+            'waiting profile with an expiry' => [[], ['end-time' => '2026-10-10 00:00:00']],
+            'waiting profile missing expiry state' => [[], ['end-time' => '']],
+            'unrecognized profile state' => [[], ['state' => 'unknown']],
         ];
     }
 
