@@ -15,6 +15,7 @@ use App\Http\Controllers\Api\V1\AdminSaleController;
 use App\Http\Controllers\Api\V1\AdminSellerCommissionController;
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\OwnerAccountingController;
+use App\Http\Controllers\Api\V1\OwnerNetworkController;
 use App\Http\Controllers\Api\V1\SellerCardDeliveryController;
 use App\Http\Controllers\Api\V1\SellerCatalogController;
 use App\Http\Controllers\Api\V1\SellerDepositController;
@@ -73,6 +74,9 @@ Route::prefix('v1')->name('api.v1.')->group(function (): void {
             Route::get('sales/{sale}/delivery', [SellerCardDeliveryController::class, 'show'])->name('seller.delivery.show');
         });
         Route::prefix('owner')->middleware(['role:network_owner', 'abilities:network_owner'])->group(function (): void {
+            Route::get('networks', [OwnerNetworkController::class, 'index'])->name('owner.networks.index');
+            Route::get('networks/{network}', [OwnerNetworkController::class, 'show'])->name('owner.networks.show');
+            Route::get('networks/{network}/products', [OwnerNetworkController::class, 'products'])->name('owner.products.index');
             Route::get('accounting/balance', [OwnerAccountingController::class, 'balance'])->name('owner.accounting.balance');
             Route::get('settlements', [OwnerAccountingController::class, 'settlements'])->name('owner.settlements.index');
             Route::get('settlements/{settlement}', [OwnerAccountingController::class, 'settlement'])->name('owner.settlements.show');
