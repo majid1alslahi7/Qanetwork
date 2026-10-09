@@ -43,7 +43,21 @@ php artisan queue:work --queue=sales,reconciliation,network-health,delivery,defa
 php artisan schedule:work
 ```
 
-على الاستضافة، وجّه جذر الويب إلى `public`، واضبط `APP_ENV=production` و`APP_DEBUG=false` و`APP_URL=https://alssemam.live` وفعّل HTTPS. يجب تشغيل عامل الطوابير بصورة مستمرة عبر مدير عمليات، واستدعاء `php artisan schedule:run` كل دقيقة عبر Cron من مجلد المشروع. تعتمد طريقة تشغيل العامل على إمكانات الاستضافة.
+على الاستضافة، وجّه جذر الويب إلى `public`، واضبط `APP_ENV=production` و`APP_DEBUG=false` و`APP_URL=https://alssemam.live` وفعّل HTTPS. عند توفر مدير عمليات، شغّل عمال الطوابير بصورة مستمرة، واستدعِ `php artisan schedule:run` كل دقيقة عبر Cron من مجلد المشروع.
+
+للاستضافة المشتركة دون عامل دائم، أضف استدعاء Cron منفصلًا كل دقيقة لكل أمر أدناه، بعد تحديد مسار PHP ومجلد المشروع على الخادم:
+
+```sh
+php artisan schedule:run --no-interaction
+php artisan qanetwork:work sales --no-interaction
+php artisan qanetwork:work reconciliation --no-interaction
+php artisan qanetwork:work network-health --no-interaction
+php artisan qanetwork:work delivery --no-interaction
+```
+
+كل استدعاء عامل يعالج طابورًا واحدًا، ويتوقف عند فراغه أو بعد 50 ثانية عند انتهاء المهمة الحالية. الحد الخارجي للعملية 120 ثانية؛ يجب أن تسمح الاستضافة بهذه المدة وبإنشاء عمليات PHP فرعية. اضبط `DB_QUEUE_RETRY_AFTER=150`؛ يرفض الأمر تشغيل العامل إذا كانت مهلة إعادة إتاحة المهمة أقصر من الحد الخارجي للعملية مع هامش أمان. القفل يمنع تداخل استدعاءات الطابور نفسه. الفصل بين الطوابير يمنع ضغط المبيعات من تعطيل فحص الشبكات والتوصيل. لا تشغّل العمال الدائمين وعمال Cron للطابور نفسه في الوقت ذاته.
+
+بعد تشغيل المجدول والعمال وإعداد SMS، افحص المتطلبات باستخدام `php artisan qanetwork:preflight --no-interaction`، أو أضف `--json` للحصول على تقرير قابل للقراءة آليًا. نجاح الفحص لا يغني عن التحقق من DNS وشهادة HTTPS واستعادة النسخ الاحتياطية وتجربة بيع فعلية.
 
 لا ترفع `.env` أو مفاتيح التشفير أو بيانات الإنتاج. احتفظ بـ`APP_KEY` والنسخ الاحتياطية في مكان آمن؛ تغيير المفتاح يفقد القدرة على فك تشفير بيانات الاتصال المخزنة.
 
