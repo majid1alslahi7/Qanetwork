@@ -16,6 +16,8 @@ class AccountRegistration extends Model
 
     protected $hidden = ['password'];
 
+    protected $attributes = ['status' => 'pending'];
+
     protected function casts(): array
     {
         return ['password' => 'hashed', 'reviewed_at' => 'datetime'];

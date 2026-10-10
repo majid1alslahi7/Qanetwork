@@ -18,6 +18,7 @@ use App\Providers\Enums\ProviderTransactionStatus;
 use App\Providers\Inventory\StoredCardAdapter;
 use App\Services\Finance\AdjustSellerWalletService;
 use App\Services\Networks\ImportInventoryCardsService;
+use App\Services\Operations\RecordAccountNotificationService;
 use App\Services\Providers\PrepareProviderTransactionService;
 use App\Services\Sales\PaidSaleCardService;
 use App\Services\Sales\ProcessSaleService;
@@ -72,6 +73,9 @@ class StoredCardAdapterTest extends TestCase
         $service->handle($sale, $connection);
         $this->assertSame($balance, $wallet->fresh()->balance);
         $this->assertDatabaseCount('sold_cards', 1);
+        $notifications = $sale->seller->user->notifications()->where('type', RecordAccountNotificationService::TYPE)->get();
+        $this->assertCount(1, $notifications);
+        $this->assertSame('completed', $notifications->first()->data['status']);
         $this->assertDatabaseCount('inventory_cards', 1);
         $next = Sale::query()->create(['seller_id' => $sale->seller_id, 'seller_wallet_id' => $sale->seller_wallet_id, 'network_id' => $sale->network_id, 'network_product_id' => $product->id, 'reference_no' => 'STOCK-NEXT', 'idempotency_key' => 'stock-next', 'currency_code' => 'YER']);
         app(SaleFinancialSnapshotService::class)->create($next, '100', '80', '10', '10');

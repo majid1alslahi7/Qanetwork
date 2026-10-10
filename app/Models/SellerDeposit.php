@@ -11,6 +11,8 @@ class SellerDeposit extends Model
 {
     use HasFactory, HasUlids;
 
+    protected $attributes = ['status' => 'pending'];
+
     protected $fillable = [
         'seller_id',
         'seller_wallet_id',

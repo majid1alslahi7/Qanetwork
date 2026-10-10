@@ -32,6 +32,8 @@ class AccountRegistrationApiTest extends TestCase
         $this->postJson('/api/v1/auth/login', ['email' => $payload['email'], 'password' => $payload['password'], 'device_name' => 'test'])->assertUnprocessable();
         $admin = User::factory()->create(['role' => UserRole::ADMIN]);
         $token = $admin->createToken('admin', ['account', 'admin'])->plainTextToken;
+        $this->withToken($token)->getJson('/api/v1/admin/registrations/'.$registration->id)
+            ->assertOk()->assertJsonPath('data.id', $registration->id)->assertJsonMissingPath('data.password');
         $review = ['decision' => 'approved', 'reason' => 'Identity verified with the owner.'];
         for ($attempt = 0; $attempt < 2; $attempt++) {
             $this->withToken($token)->postJson('/api/v1/admin/registrations/'.$registration->id.'/review', $review)->assertOk()->assertJsonPath('data.status', 'approved')->assertJsonMissingPath('data.password');

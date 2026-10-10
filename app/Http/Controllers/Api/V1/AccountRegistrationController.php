@@ -36,6 +36,11 @@ class AccountRegistrationController extends Controller
             ->orderByDesc('created_at')->orderByDesc('id')->paginate(25));
     }
 
+    public function show(AccountRegistration $registration): AccountRegistrationResource
+    {
+        return new AccountRegistrationResource($registration);
+    }
+
     public function review(Request $request, AccountRegistration $registration, ReviewAccountRegistrationService $service): AccountRegistrationResource
     {
         $validated = $request->validate([

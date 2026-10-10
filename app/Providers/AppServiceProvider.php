@@ -2,6 +2,12 @@
 
 namespace App\Providers;
 
+use App\Models\AccountRegistration;
+use App\Models\Network;
+use App\Models\ProviderSettlement;
+use App\Models\Sale;
+use App\Models\SellerDeposit;
+use App\Observers\OperationalNotificationObserver;
 use App\Providers\Inventory\StoredCardAdapter;
 use App\Providers\MikroTik\MikroTikHotspotAdapter;
 use App\Providers\MikroTik\MikroTikUserManagerAdapter;
@@ -49,6 +55,9 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        foreach ([Sale::class, SellerDeposit::class, ProviderSettlement::class, AccountRegistration::class, Network::class] as $model) {
+            $model::observe(OperationalNotificationObserver::class);
+        }
         Event::listen(ScheduledTaskFinished::class, function (ScheduledTaskFinished $event): void {
             $this->app->make(OperationsMonitor::class)->recordScheduler();
         });

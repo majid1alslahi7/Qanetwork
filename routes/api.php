@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\V1\AccountNotificationController;
 use App\Http\Controllers\Api\V1\AccountRegistrationController;
 use App\Http\Controllers\Api\V1\AdminAccountController;
 use App\Http\Controllers\Api\V1\AdminAccountingController;
@@ -36,10 +37,13 @@ Route::prefix('v1')->name('api.v1.')->group(function (): void {
         Route::get('auth/me', [AuthController::class, 'me'])->name('auth.me');
         Route::post('auth/logout', [AuthController::class, 'logout'])->name('auth.logout');
         Route::prefix('admin')->middleware(['role:admin', 'abilities:admin'])->group(function (): void {
+            Route::get('notifications', [AccountNotificationController::class, 'index'])->name('admin.notifications.index');
+            Route::patch('notifications/{notification}', [AccountNotificationController::class, 'update'])->name('admin.notifications.update');
             Route::post('networks/{network}/products/import', [NetworkProductImportController::class, 'store'])->middleware('throttle:inventory-import')->name('admin.products.import');
             Route::get('networks/{network}/products/{product}/inventory', [NetworkInventoryController::class, 'index'])->name('admin.inventory.index');
             Route::post('networks/{network}/products/{product}/inventory', [NetworkInventoryController::class, 'store'])->middleware('throttle:inventory-import')->name('admin.inventory.store');
             Route::get('registrations', [AccountRegistrationController::class, 'index'])->name('admin.registrations.index');
+            Route::get('registrations/{registration}', [AccountRegistrationController::class, 'show'])->name('admin.registrations.show');
             Route::post('registrations/{registration}/review', [AccountRegistrationController::class, 'review'])->name('admin.registrations.review');
             Route::get('operations', [AdminOperationsController::class, 'show'])->name('admin.operations.show');
             Route::get('operations/failed-jobs', [AdminOperationsController::class, 'failedJobs'])->name('admin.operations.failed-jobs');
@@ -71,6 +75,8 @@ Route::prefix('v1')->name('api.v1.')->group(function (): void {
             Route::delete('networks/{network}/products/{product}/pricing/{pricingRule}/commissions/{commission}', [AdminSellerCommissionController::class, 'destroy'])->scopeBindings()->name('admin.commissions.destroy');
         });
         Route::prefix('seller')->middleware(['role:seller', 'abilities:seller'])->group(function (): void {
+            Route::get('notifications', [AccountNotificationController::class, 'index'])->name('seller.notifications.index');
+            Route::patch('notifications/{notification}', [AccountNotificationController::class, 'update'])->name('seller.notifications.update');
             Route::get('networks', [SellerCatalogController::class, 'networks'])->name('seller.catalog.networks');
             Route::get('networks/{network}/products', [SellerCatalogController::class, 'products'])->name('seller.catalog.products');
             Route::get('networks/{network}/products/{product}', [SellerCatalogController::class, 'product'])->name('seller.catalog.product');
@@ -83,6 +89,8 @@ Route::prefix('v1')->name('api.v1.')->group(function (): void {
             Route::get('sales/{sale}/delivery', [SellerCardDeliveryController::class, 'show'])->name('seller.delivery.show');
         });
         Route::prefix('owner')->middleware(['role:network_owner', 'abilities:network_owner'])->group(function (): void {
+            Route::get('notifications', [AccountNotificationController::class, 'index'])->name('owner.notifications.index');
+            Route::patch('notifications/{notification}', [AccountNotificationController::class, 'update'])->name('owner.notifications.update');
             Route::post('networks/{network}/products/import', [NetworkProductImportController::class, 'store'])->middleware('throttle:inventory-import')->name('owner.products.import');
             Route::patch('networks/{network}/products/{product}/status', [OwnerNetworkController::class, 'updateProductStatus'])->scopeBindings()->name('owner.products.status');
             Route::patch('networks/{network}/connections/{connection}/status', [OwnerNetworkController::class, 'updateConnectionStatus'])->scopeBindings()->name('owner.connections.status');
