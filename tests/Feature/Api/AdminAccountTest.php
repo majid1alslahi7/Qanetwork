@@ -27,8 +27,8 @@ class AdminAccountTest extends TestCase
 
         $response = $this->withToken($token)->postJson('/api/v1/admin/accounts', $payload);
 
-        $response->assertCreated()->assertJsonPath('data.role', $role);
-        $this->assertSame(['id', 'name', 'email', 'role', 'status', 'seller_id', 'network_owner_id'], array_keys($response->json('data')));
+        $response->assertCreated()->assertJsonPath('data.role', $role)->assertJsonPath('data.require_device_approval', false);
+        $this->assertSame(['id', 'name', 'email', 'role', 'status', 'require_device_approval', 'seller_id', 'network_owner_id'], array_keys($response->json('data')));
         $created = User::query()->where('email', $payload['email'])->firstOrFail();
         $this->assertTrue(Hash::check($payload['password'], $created->password));
         $this->assertTrue($created->canAccessApplication());
@@ -186,8 +186,8 @@ class AdminAccountTest extends TestCase
         $response = $this->withToken($admin->createToken('device', ['account', 'admin'])->plainTextToken)
             ->getJson('/api/v1/admin/accounts');
 
-        $response->assertOk()->assertJsonCount(25, 'data')->assertJsonPath('meta.total', 31);
-        $this->assertSame(['id', 'name', 'email', 'role', 'status', 'seller_id', 'network_owner_id'], array_keys($response->json('data.0')));
+        $response->assertOk()->assertJsonCount(25, 'data')->assertJsonPath('meta.total', 31)->assertJsonPath('data.0.require_device_approval', false);
+        $this->assertSame(['id', 'name', 'email', 'role', 'status', 'require_device_approval', 'seller_id', 'network_owner_id'], array_keys($response->json('data.0')));
     }
 
     public function test_admin_account_listing_exposes_profile_ids_for_account_pickers(): void
