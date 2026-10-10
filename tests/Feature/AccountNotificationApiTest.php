@@ -32,10 +32,11 @@ class AccountNotificationApiTest extends TestCase
         $foreign = $this->account($role);
         $recorder = app(RecordAccountNotificationService::class);
         $roleEnum = UserRole::from($role);
+        $kind = $role === 'network_owner' ? 'settlement' : 'sale';
         foreach (range(1, 26) as $index) {
-            $recorder->record($user, $roleEnum, 'event-'.$index, 'sale', 'target-'.$index, 'completed', 'Title', 'Safe message');
+            $recorder->record($user, $roleEnum, 'event-'.$index, $kind, 'target-'.$index, 'completed', 'Title', 'Safe message');
         }
-        $recorder->record($foreign, $roleEnum, 'foreign', 'sale', 'secret-target', 'completed', 'Foreign', 'Private');
+        $recorder->record($foreign, $roleEnum, 'foreign', $kind, 'secret-target', 'completed', 'Foreign', 'Private');
         Sanctum::actingAs($user, ['account', $role]);
         $path = '/api/v1/'.$prefix.'/notifications';
         $this->getJson($path)->assertOk()->assertJsonCount(25, 'data')->assertJsonPath('summary.unread_count', 26)->assertJsonPath('meta.last_page', 2);
@@ -49,7 +50,7 @@ class AccountNotificationApiTest extends TestCase
         $this->patchJson($path.'/'.$id, ['read' => false])->assertOk()->assertJsonPath('data.read_at', null);
         $this->patchJson($path.'/'.$foreign->notifications()->sole()->id, ['read' => true])->assertNotFound();
         $this->patchJson($path.'/'.$id, ['read' => 'invalid'])->assertUnprocessable()->assertJsonValidationErrors('read');
-        $recorder->record($user, $roleEnum, 'event-1', 'sale', 'target-1', 'completed', 'Title', 'Safe message');
+        $recorder->record($user, $roleEnum, 'event-1', $kind, 'target-1', 'completed', 'Title', 'Safe message');
         $this->assertSame(26, $user->notifications()->count());
     }
 

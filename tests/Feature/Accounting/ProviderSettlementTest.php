@@ -27,6 +27,9 @@ class ProviderSettlementTest extends TestCase
     public function test_partial_payments_allocate_exactly_once_and_cannot_exceed_remaining_balance(): void
     {
         $owner = $this->owner();
+        $ownerUser = User::factory()->create(['role' => UserRole::NETWORK_OWNER]);
+        $owner->user_id = $ownerUser->id;
+        $owner->save();
         $first = $this->payable($owner, '800');
         $second = $this->payable($owner, '400');
         $this->admin();
@@ -34,6 +37,8 @@ class ProviderSettlementTest extends TestCase
         $response = $this->postJson($this->url($owner), $payload)->assertCreated();
         $response->assertJsonCount(2, 'data.allocations');
         $id = $response->json('data.id');
+        $this->assertSame($id, $ownerUser->notifications()->sole()->data['target_id']);
+        $this->assertSame('settlement', $ownerUser->notifications()->sole()->data['kind']);
         $allocations = ProviderSettlement::query()->findOrFail($id)->allocations()->get();
         $this->assertSame('800.0000', $allocations->firstWhere('sale_accounting_entry_id', $first->id)->amount);
         $this->assertSame('100.0000', $allocations->firstWhere('sale_accounting_entry_id', $second->id)->amount);
@@ -41,6 +46,7 @@ class ProviderSettlementTest extends TestCase
         $this->assertDatabaseCount('provider_settlements', 1);
         $this->assertDatabaseCount('provider_settlement_allocations', 2);
         $this->assertDatabaseCount('audit_events', 1);
+        $this->assertSame(1, $ownerUser->notifications()->count());
         $this->getJson('/api/v1/admin/owners/'.$owner->id.'/balance')->assertOk()
             ->assertJsonPath('data.currencies.0.accrued', '1200.0000')->assertJsonPath('data.currencies.0.settled', '900.0000')
             ->assertJsonPath('data.currencies.0.outstanding', '300.0000');
@@ -48,6 +54,7 @@ class ProviderSettlementTest extends TestCase
         $next['external_reference'] = 'second-transfer';
         $next['idempotency_key'] = 'payment-0002';
         $this->postJson($this->url($owner), $next)->assertUnprocessable()->assertJsonValidationErrors('amount');
+        $this->assertSame(1, $ownerUser->notifications()->count());
         $this->assertDatabaseCount('provider_settlements', 1);
         $this->assertDatabaseCount('provider_settlement_allocations', 2);
         $next['amount'] = '300';
