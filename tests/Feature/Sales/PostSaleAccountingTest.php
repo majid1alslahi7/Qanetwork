@@ -10,6 +10,7 @@ use App\Models\Seller;
 use App\Models\SellerWallet;
 use App\Models\SoldCard;
 use App\Models\User;
+use App\Services\Accounting\SaleAccountingReportService;
 use App\Services\Providers\PrepareProviderTransactionService;
 use App\Services\Sales\FinalizeConfirmedSaleService;
 use App\Services\Sales\ReserveSaleBalanceService;
@@ -22,6 +23,27 @@ use Tests\TestCase;
 class PostSaleAccountingTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_malki_sale_automatically_accrues_owner_share_and_retains_seller_commission_once(): void
+    {
+        $sale = $this->confirmedSale('200', '170', '14', '16');
+        $owner = NetworkOwner::query()->findOrFail($sale->financial()->firstOrFail()->network_owner_id);
+        $report = app(SaleAccountingReportService::class);
+        $this->assertSame(['currencies' => []], $report->ownerBalance($owner));
+        $this->assertSame('1000.0000', $sale->wallet()->firstOrFail()->balance);
+
+        $finalizer = app(FinalizeConfirmedSaleService::class);
+        $finalizer->handle($sale);
+        $finalizer->handle($sale);
+
+        $this->assertSame('814.0000', $sale->wallet()->firstOrFail()->balance);
+        $this->assertSame('0.0000', $sale->wallet()->firstOrFail()->reserved_balance);
+        $this->assertSame('14.0000', $sale->financial()->firstOrFail()->seller_commission);
+        $this->assertSame(['currencies' => [['currency_code' => 'YER', 'accrued' => '170.0000', 'settled' => '0.0000', 'outstanding' => '170.0000']]], $report->ownerBalance($owner));
+        $this->assertDatabaseHas('sale_accounting_entries', ['sale_id' => $sale->id, 'entry_type' => 'platform_revenue', 'amount' => '16.0000']);
+        $this->assertDatabaseCount('sale_accounting_entries', 2);
+        $this->assertDatabaseCount('seller_ledger_entries', 1);
+    }
 
     public function test_sale_posts_provider_payable_and_platform_revenue_once_from_snapshot(): void
     {
@@ -87,7 +109,7 @@ class PostSaleAccountingTest extends TestCase
         $sale->financial()->firstOrFail()->update(['provider_amount' => '1']);
     }
 
-    private function confirmedSale(): Sale
+    private function confirmedSale(string $faceValue = '1000', string $ownerShare = '800', string $sellerCommission = '150', string $platformShare = '50'): Sale
     {
         $seller = Seller::query()->create(['user_id' => User::factory()->create()->id, 'code' => 'seller']);
         $wallet = SellerWallet::query()->create(['seller_id' => $seller->id, 'currency_code' => 'YER']);
@@ -96,10 +118,10 @@ class PostSaleAccountingTest extends TestCase
         $owner = NetworkOwner::query()->create(['code' => 'owner', 'name' => 'Owner']);
         $network = Network::query()->create(['network_owner_id' => $owner->id, 'code' => 'network', 'name' => 'Network']);
         $connection = $network->connections()->create(['name' => 'Primary', 'driver' => 'not-called', 'is_enabled' => true]);
-        $product = $network->products()->create(['code' => 'product', 'external_product_id' => 'day', 'name' => 'Day', 'face_value' => '1000', 'currency_code' => 'YER']);
+        $product = $network->products()->create(['code' => 'product', 'external_product_id' => 'day', 'name' => 'Day', 'face_value' => $faceValue, 'currency_code' => 'YER']);
         $sale = Sale::query()->create(['seller_id' => $seller->id, 'seller_wallet_id' => $wallet->id, 'network_id' => $network->id,
             'network_product_id' => $product->id, 'reference_no' => 'sale', 'idempotency_key' => 'sale', 'currency_code' => 'YER']);
-        app(SaleFinancialSnapshotService::class)->create($sale, '1000', '800', '150', '50');
+        app(SaleFinancialSnapshotService::class)->create($sale, $faceValue, $ownerShare, $sellerCommission, $platformShare);
         app(ReserveSaleBalanceService::class)->handle($sale, 'sale:'.$sale->id.':reservation');
         $transaction = app(PrepareProviderTransactionService::class)->handle($sale, $connection);
         $transaction->status = 'confirmed';
