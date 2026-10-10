@@ -90,6 +90,34 @@ class NetworkProductImportApiTest extends TestCase
         $this->assertDatabaseCount('network_products', 1);
     }
 
+    #[TestWith([true])]
+    #[TestWith([false])]
+    public function test_hotspot_import_maps_actual_issuance_limits_for_selected_or_default_source(bool $explicitSource): void
+    {
+        [$user, $network] = $this->catalog();
+        Sanctum::actingAs($user, ['account', 'network_owner']);
+        $source = $network->connections()->create(['driver' => 'mikrotik_hotspot', 'name' => 'Hotspot', 'is_primary' => true]);
+        $payload = ['file' => UploadedFile::fake()->createWithContent('products.csv', "name,external_product_id,face_value,data_limit_bytes,duration_minutes\nDay,day,200,10485760,60\n")];
+        if ($explicitSource) {
+            $payload['fulfillment_connection_id'] = $source->id;
+        }
+        $this->post($this->path($network), $payload, ['Accept' => 'application/json'])->assertCreated();
+        $this->assertSame(['hotspot' => ['limit_bytes_total' => 10485760, 'limit_uptime_seconds' => 3600]], NetworkProduct::query()->sole()->metadata);
+    }
+
+    #[TestWith([''])]
+    #[TestWith(['5256001'])]
+    public function test_hotspot_missing_or_excessive_limits_roll_back_valid_preceding_rows(string $duration): void
+    {
+        [$user, $network] = $this->catalog();
+        Sanctum::actingAs($user, ['account', 'network_owner']);
+        $network->connections()->create(['driver' => 'mikrotik_hotspot', 'name' => 'Hotspot', 'is_primary' => true]);
+        $file = UploadedFile::fake()->createWithContent('products.csv', "name,external_product_id,face_value,duration_minutes\nDay,day,200,60\nInvalid,invalid,100,$duration\n");
+        $this->post($this->path($network), ['file' => $file], ['Accept' => 'application/json'])->assertUnprocessable()->assertJsonValidationErrors('file');
+        $this->assertDatabaseCount('network_products', 0);
+        $this->assertDatabaseCount('audit_events', 0);
+    }
+
     /** @return array{User, Network} */
     private function catalog(string $role = 'network_owner'): array
     {

@@ -84,14 +84,30 @@ class ImportNetworkProductsService
                     throw new AuthorizationException;
                 }
                 $owned = Network::query()->when($user->role === UserRole::NETWORK_OWNER, fn ($query) => $query->where('network_owner_id', $user->networkOwner()->firstOrFail()->id))->lockForUpdate()->findOrFail($network->id);
-                if ($connectionId !== null) {
-                    $owned->connections()->lockForUpdate()->findOrFail($connectionId);
-                }
+                $source = $connectionId !== null
+                    ? $owned->connections()->lockForUpdate()->findOrFail($connectionId)
+                    : $owned->connections()->where('is_primary', true)->lockForUpdate()->first();
                 if ($owned->products()->whereIn('external_product_id', array_keys($seen))->exists()) {
                     throw ValidationException::withMessages(['file' => 'This file contains existing products. No products were imported.']);
                 }
                 $ids = [];
                 foreach ($batch as $data) {
+                    if ($source?->driver === 'mikrotik_hotspot') {
+                        $limits = [];
+                        if (isset($data['data_limit_bytes'])) {
+                            $limits['limit_bytes_total'] = (int) $data['data_limit_bytes'];
+                        }
+                        if (isset($data['duration_minutes'])) {
+                            if ((int) $data['duration_minutes'] > 5256000) {
+                                throw ValidationException::withMessages(['file' => 'Hotspot duration must not exceed 5256000 minutes. No products were imported.']);
+                            }
+                            $limits['limit_uptime_seconds'] = (int) $data['duration_minutes'] * 60;
+                        }
+                        if ($limits === []) {
+                            throw ValidationException::withMessages(['file' => 'Hotspot products require a data or duration limit. No products were imported.']);
+                        }
+                        $data['metadata'] = ['hotspot' => $limits];
+                    }
                     $ids[] = $this->products->create($user, $owned, [...$data, 'fulfillment_connection_id' => $connectionId])->id;
                 }
 
