@@ -26,6 +26,8 @@ class LoginRequest extends FormRequest
             'email' => ['required', 'string', 'email', 'max:255'],
             'password' => ['required', 'string', 'max:1024'],
             'device_name' => ['required', 'string', 'max:100'],
+            'device_challenge_id' => ['required_with:device_signature', 'nullable', 'uuid'],
+            'device_signature' => ['required_with:device_challenge_id', 'nullable', 'string', 'max:256'],
             'role' => ['prohibited'],
             'status' => ['prohibited'],
         ];

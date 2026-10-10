@@ -77,6 +77,13 @@ class AppServiceProvider extends ServiceProvider
             ];
         });
         RateLimiter::for('api', fn (Request $request) => Limit::perMinute(120)->by((string) $request->user()->id));
+        RateLimiter::for('device-challenge', function (Request $request): array {
+            $email = $request->input('email');
+            $account = is_string($email) ? mb_strtolower(trim($email)) : '';
+
+            return [Limit::perMinute(5)->by('device-challenge-account:'.hash('sha256', $account).'|'.$request->ip()),
+                Limit::perMinute(30)->by('device-challenge-ip:'.$request->ip())];
+        });
         RateLimiter::for('notification-feed', fn (Request $request) => Limit::perMinute(10)->by('notification-feed:'.$request->user()->id));
         RateLimiter::for('notification-device', fn (Request $request) => Limit::perMinute(10)->by('notification-device:'.$request->user()->id));
         RateLimiter::for('registration', fn (Request $request) => [

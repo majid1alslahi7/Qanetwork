@@ -28,7 +28,11 @@ class ManageNotificationDeviceTokenService
                 throw ValidationException::withMessages(['device_id' => 'The account already has ten notification devices.']);
             }
 
-            return $user->createToken($this->deviceName($deviceId), ['notification-feed', 'notification-parent:'.$parent->id, 'notification-role:'.$user->role->value], $expires->min(now()->addHours(8)));
+            $issued = $user->createToken($this->deviceName($deviceId), ['notification-feed', 'notification-parent:'.$parent->id, 'notification-role:'.$user->role->value], $expires->min(now()->addHours(8)));
+            $issued->accessToken->account_device_id = $parent->account_device_id;
+            $issued->accessToken->save();
+
+            return $issued;
         }, 3);
     }
 

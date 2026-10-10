@@ -8,6 +8,7 @@ use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -20,7 +21,7 @@ class User extends Authenticatable
     /** @use HasFactory<UserFactory> */
     use HasApiTokens, HasFactory, Notifiable;
 
-    protected $attributes = ['role' => 'seller', 'status' => 'active'];
+    protected $attributes = ['role' => 'seller', 'status' => 'active', 'require_device_approval' => false];
 
     public function seller(): HasOne
     {
@@ -30,6 +31,11 @@ class User extends Authenticatable
     public function networkOwner(): HasOne
     {
         return $this->hasOne(NetworkOwner::class);
+    }
+
+    public function devices(): HasMany
+    {
+        return $this->hasMany(AccountDevice::class);
     }
 
     public function canAccessApplication(): bool
@@ -56,6 +62,7 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'role' => UserRole::class,
+            'require_device_approval' => 'boolean',
         ];
     }
 }

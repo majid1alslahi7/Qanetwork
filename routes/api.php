@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\V1\AccountNotificationController;
 use App\Http\Controllers\Api\V1\AccountRegistrationController;
 use App\Http\Controllers\Api\V1\AdminAccountController;
+use App\Http\Controllers\Api\V1\AdminAccountDeviceController;
 use App\Http\Controllers\Api\V1\AdminAccountingController;
 use App\Http\Controllers\Api\V1\AdminAuditEventController;
 use App\Http\Controllers\Api\V1\AdminDepositController;
@@ -16,6 +17,7 @@ use App\Http\Controllers\Api\V1\AdminProviderSettlementController;
 use App\Http\Controllers\Api\V1\AdminSaleController;
 use App\Http\Controllers\Api\V1\AdminSellerCommissionController;
 use App\Http\Controllers\Api\V1\AuthController;
+use App\Http\Controllers\Api\V1\DeviceChallengeController;
 use App\Http\Controllers\Api\V1\NetworkInventoryController;
 use App\Http\Controllers\Api\V1\NetworkProductImportController;
 use App\Http\Controllers\Api\V1\NotificationDeviceController;
@@ -38,6 +40,7 @@ Route::prefix('v1')->name('api.v1.')->group(function (): void {
     Route::get('notification-feed', NotificationFeedController::class)->middleware(['auth:sanctum', 'account.active', 'abilities:notification-feed', 'throttle:notification-feed'])->name('notification-feed');
     Route::post('auth/register', [AccountRegistrationController::class, 'store'])->middleware('throttle:registration')->name('auth.register');
     Route::post('auth/login', [AuthController::class, 'login'])->middleware('throttle:login')->name('auth.login');
+    Route::post('auth/device-challenge', DeviceChallengeController::class)->middleware('throttle:device-challenge')->name('auth.device-challenge');
     Route::middleware(['auth:sanctum', 'account.active', 'abilities:account', 'throttle:api'])->group(function (): void {
         Route::get('auth/me', [AuthController::class, 'me'])->name('auth.me');
         Route::post('auth/logout', [AuthController::class, 'logout'])->name('auth.logout');
@@ -68,6 +71,9 @@ Route::prefix('v1')->name('api.v1.')->group(function (): void {
             Route::get('accounts', [AdminAccountController::class, 'index'])->name('admin.accounts.index');
             Route::get('accounts/{user}', [AdminAccountController::class, 'show'])->name('admin.accounts.show');
             Route::get('accounts/{user}/contacts', [AdminAccountController::class, 'contacts'])->name('admin.accounts.contacts');
+            Route::get('accounts/{user}/devices', [AdminAccountDeviceController::class, 'index'])->name('admin.accounts.devices');
+            Route::patch('accounts/{user}/devices/{device}', [AdminAccountDeviceController::class, 'update'])->name('admin.accounts.devices.update');
+            Route::patch('accounts/{user}/device-policy', [AdminAccountDeviceController::class, 'policy'])->name('admin.accounts.device-policy');
             Route::patch('accounts/{user}', [AdminAccountController::class, 'update'])->name('admin.accounts.update');
             Route::post('accounts/{user}/deposits', [AdminAccountController::class, 'storeDeposit'])->name('admin.accounts.deposits.store');
             Route::post('accounts', [AdminAccountController::class, 'store'])->name('admin.accounts.store');

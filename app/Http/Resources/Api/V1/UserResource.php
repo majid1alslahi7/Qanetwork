@@ -18,6 +18,7 @@ class UserResource extends JsonResource
         return ['id' => $this->id, 'name' => $this->name, 'email' => $this->email,
             'role' => $this->role->value, 'status' => $this->status,
             $this->mergeWhen($request->user()?->role === UserRole::ADMIN, [
+                'require_device_approval' => $this->require_device_approval,
                 'seller_id' => $this->whenLoaded('seller', fn (): ?string => $this->seller?->id),
                 'network_owner_id' => $this->whenLoaded('networkOwner', fn (): ?string => $this->networkOwner?->id),
             ])];
