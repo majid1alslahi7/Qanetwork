@@ -16,6 +16,7 @@ use App\Http\Controllers\Api\V1\AdminSaleController;
 use App\Http\Controllers\Api\V1\AdminSellerCommissionController;
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\NetworkInventoryController;
+use App\Http\Controllers\Api\V1\NetworkProductImportController;
 use App\Http\Controllers\Api\V1\OwnerAccountingController;
 use App\Http\Controllers\Api\V1\OwnerNetworkController;
 use App\Http\Controllers\Api\V1\SellerCardDeliveryController;
@@ -35,6 +36,7 @@ Route::prefix('v1')->name('api.v1.')->group(function (): void {
         Route::get('auth/me', [AuthController::class, 'me'])->name('auth.me');
         Route::post('auth/logout', [AuthController::class, 'logout'])->name('auth.logout');
         Route::prefix('admin')->middleware(['role:admin', 'abilities:admin'])->group(function (): void {
+            Route::post('networks/{network}/products/import', [NetworkProductImportController::class, 'store'])->middleware('throttle:inventory-import')->name('admin.products.import');
             Route::get('networks/{network}/products/{product}/inventory', [NetworkInventoryController::class, 'index'])->name('admin.inventory.index');
             Route::post('networks/{network}/products/{product}/inventory', [NetworkInventoryController::class, 'store'])->middleware('throttle:inventory-import')->name('admin.inventory.store');
             Route::get('registrations', [AccountRegistrationController::class, 'index'])->name('admin.registrations.index');
@@ -81,6 +83,7 @@ Route::prefix('v1')->name('api.v1.')->group(function (): void {
             Route::get('sales/{sale}/delivery', [SellerCardDeliveryController::class, 'show'])->name('seller.delivery.show');
         });
         Route::prefix('owner')->middleware(['role:network_owner', 'abilities:network_owner'])->group(function (): void {
+            Route::post('networks/{network}/products/import', [NetworkProductImportController::class, 'store'])->middleware('throttle:inventory-import')->name('owner.products.import');
             Route::patch('networks/{network}/products/{product}/status', [OwnerNetworkController::class, 'updateProductStatus'])->scopeBindings()->name('owner.products.status');
             Route::patch('networks/{network}/connections/{connection}/status', [OwnerNetworkController::class, 'updateConnectionStatus'])->scopeBindings()->name('owner.connections.status');
             Route::post('networks/{network}/connections/{connection}/health', [OwnerNetworkController::class, 'checkConnection'])->scopeBindings()->middleware('throttle:network-health')->name('owner.connections.health');

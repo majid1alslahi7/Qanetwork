@@ -12,15 +12,7 @@ class ReadInventorySpreadsheetService
     /** @return list<array{username: string, password?: string}> */
     public function read(UploadedFile $file): array
     {
-        if ($file->getSize() > 5 * 1024 * 1024) {
-            $this->invalid('The import file exceeds 5 MB.');
-        }
-        $extension = mb_strtolower($file->getClientOriginalExtension());
-        $rows = match ($extension) {
-            'csv' => $this->csv($file->getRealPath()),
-            'xlsx' => $this->xlsx($file->getRealPath()),
-            default => $this->invalid('Use an XLSX or UTF-8 CSV file.'),
-        };
+        $rows = $this->readTable($file, 2, false);
         $header = array_shift($rows);
         if ($header === null) {
             $this->invalid('The file is empty.');
@@ -61,7 +53,27 @@ class ReadInventorySpreadsheetService
     }
 
     /** @return list<array<int, string>> */
-    private function csv(string $path): array
+    public function readProductTable(UploadedFile $file): array
+    {
+        return $this->readTable($file, 6, true);
+    }
+
+    /** @return list<array<int, string>> */
+    private function readTable(UploadedFile $file, int $columns, bool $allowDecimals): array
+    {
+        if ($file->getSize() > 5 * 1024 * 1024) {
+            $this->invalid('The import file exceeds 5 MB.');
+        }
+
+        return match (mb_strtolower($file->getClientOriginalExtension())) {
+            'csv' => $this->csv($file->getRealPath(), $columns),
+            'xlsx' => $this->xlsx($file->getRealPath(), $columns, $allowDecimals),
+            default => $this->invalid('Use an XLSX or UTF-8 CSV file.'),
+        };
+    }
+
+    /** @return list<array<int, string>> */
+    private function csv(string $path, int $columns): array
     {
         $handle = fopen($path, 'rb');
         if ($handle === false) {
@@ -73,7 +85,7 @@ class ReadInventorySpreadsheetService
             $delimiter = $sample !== false && substr_count($sample, ';') > substr_count($sample, ',') ? ';' : ',';
             $rows = [];
             while (($row = fgetcsv($handle, 0, $delimiter, '"', '')) !== false) {
-                if (count($rows) >= 5001 || count($row) > 2) {
+                if (count($rows) >= 5001 || count($row) > $columns) {
                     $this->invalid('The file exceeds the row or column limit.');
                 }
                 $values = array_map(fn (?string $value): string => $value ?? '', $row);
@@ -92,7 +104,7 @@ class ReadInventorySpreadsheetService
     }
 
     /** @return list<array<int, string>> */
-    private function xlsx(string $path): array
+    private function xlsx(string $path, int $columns, bool $allowDecimals): array
     {
         if (! class_exists(ZipArchive::class)) {
             $this->invalid('XLSX support is unavailable on this server. Use UTF-8 CSV.');
@@ -161,10 +173,10 @@ class ReadInventorySpreadsheetService
                 }
                 $values = [];
                 foreach ($row->c as $cell) {
-                    if (! preg_match('/^([AB])[1-9][0-9]*$/', (string) $cell['r'], $matches) || isset($cell->f)) {
-                        $this->invalid('Use only username/password columns without formulas.');
+                    if (! preg_match('/^([A-F])[1-9][0-9]*$/', (string) $cell['r'], $matches) || ord($matches[1]) - ord('A') >= $columns || isset($cell->f)) {
+                        $this->invalid('The worksheet contains unexpected columns or formulas.');
                     }
-                    $column = $matches[1] === 'A' ? 0 : 1;
+                    $column = ord($matches[1]) - ord('A');
                     $type = (string) $cell['t'];
                     $value = (string) $cell->v;
                     if ($type === 's') {
@@ -175,14 +187,15 @@ class ReadInventorySpreadsheetService
                     } elseif ($type === 'inlineStr') {
                         $value = $this->text($cell->is);
                     } elseif ($value !== '' && ($type === '' || $type === 'n')) {
-                        if (! ctype_digit($value) || strlen($value) > 15) {
+                        $numericPattern = $allowDecimals ? '/^[0-9]+(?:\.[0-9]{1,4})?$/' : '/^[0-9]+$/';
+                        if (! preg_match($numericPattern, $value) || strlen(str_replace('.', '', $value)) > 15) {
                             $this->invalid('Store long codes and passwords as Text in Excel to preserve them exactly.');
                         }
                         $formatId = $styles[(int) $cell['s']] ?? 0;
                         $format = $formats[$formatId] ?? null;
-                        if ($format !== null && preg_match('/^0{1,255}$/', $format)) {
+                        if ($format !== null && preg_match('/^0{1,255}$/', $format) && ctype_digit($value)) {
                             $value = str_pad($value, strlen($format), '0', STR_PAD_LEFT);
-                        } elseif (! in_array($formatId, [0, 1, 49], true)) {
+                        } elseif (! in_array($formatId, $allowDecimals ? [0, 1, 2, 3, 4, 49] : [0, 1, 49], true)) {
                             $this->invalid('Use plain Text cells for codes with special formatting.');
                         }
                     } elseif ($type !== 'str' && $value !== '') {
