@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Api\V1\LoginRequest;
 use App\Http\Resources\Api\V1\UserResource;
 use App\Services\Auth\AuthenticateAccountService;
+use App\Services\Auth\ManageNotificationDeviceTokenService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -34,11 +35,11 @@ class AuthController extends Controller
         return new UserResource($request->user());
     }
 
-    public function logout(Request $request): Response
+    public function logout(Request $request, ManageNotificationDeviceTokenService $devices): Response
     {
         $token = $request->user()->currentAccessToken();
         if ($token instanceof PersonalAccessToken) {
-            $token->delete();
+            $devices->revokeSession($request->user(), $token);
         }
         if ($request->hasSession()) {
             Auth::guard('web')->logout();

@@ -77,6 +77,8 @@ class AppServiceProvider extends ServiceProvider
             ];
         });
         RateLimiter::for('api', fn (Request $request) => Limit::perMinute(120)->by((string) $request->user()->id));
+        RateLimiter::for('notification-feed', fn (Request $request) => Limit::perMinute(10)->by('notification-feed:'.$request->user()->id));
+        RateLimiter::for('notification-device', fn (Request $request) => Limit::perMinute(10)->by('notification-device:'.$request->user()->id));
         RateLimiter::for('registration', fn (Request $request) => [
             Limit::perMinute(3)->by('registration-minute:'.$request->ip()),
             Limit::perHour(20)->by('registration-hour:'.$request->ip()),
