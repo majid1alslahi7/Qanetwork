@@ -1,0 +1,43 @@
+<IfModule mod_rewrite.c>
+    <IfModule mod_negotiation.c>
+        Options -MultiViews -Indexes
+    </IfModule>
+
+    RewriteEngine On
+
+    # Preserve Authorization header for Laravel Sanctum / Bearer tokens.
+    RewriteCond %{HTTP:Authorization} .
+    RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
+    # Deny hidden paths while allowing certificate-validation requests.
+    RewriteRule (^|/)\.(?!well-known(?:/|$)) - [F,L]
+
+    # Internal rewrites re-enter this file; let public/.htaccess finish routing.
+    RewriteRule ^public(?:/|$) - [L]
+
+    # Resolve the domain root directly to the Laravel entry point.
+    RewriteRule ^$ public/index.php [L]
+
+    # Send every other request to Laravel public front controller.
+    RewriteRule ^(.+)$ public/$1 [L]
+</IfModule>
+
+# Block access to sensitive Laravel files if the hosting document root is the project root.
+<FilesMatch "^(\.env(?:\..*)?|\.git|artisan|composer\.(json|lock|phar)|package(-lock)?\.json|vite\.config\..*|phpunit\.xml|README\.md|TODO\.md)$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Deny from all
+    </IfModule>
+</FilesMatch>
+
+<IfModule mod_headers.c>
+    # Allow CORS only for the known front-end origins.
+    SetEnvIfNoCase Origin "^https?://(localhost(:[0-9]+)?|127\.0\.0\.1(:[0-9]+)?|alssemam\.live|www\.alssemam\.live)$" AccessControlAllowOrigin=$0
+    Header always set Access-Control-Allow-Origin "%{AccessControlAllowOrigin}e" env=AccessControlAllowOrigin
+    Header always set Access-Control-Allow-Credentials "true" env=AccessControlAllowOrigin
+    Header always set Access-Control-Allow-Methods "GET, POST, PUT, PATCH, DELETE, OPTIONS" env=AccessControlAllowOrigin
+    Header always set Access-Control-Allow-Headers "Content-Type, Authorization, X-Requested-With, X-CSRF-TOKEN, Accept" env=AccessControlAllowOrigin
+    Header always set Vary "Origin"
+</IfModule>
