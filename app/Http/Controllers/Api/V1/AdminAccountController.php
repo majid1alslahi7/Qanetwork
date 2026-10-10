@@ -10,6 +10,7 @@ use App\Http\Requests\Api\V1\UpdateAccountProfileRequest;
 use App\Http\Requests\Api\V1\UpdateAccountStatusRequest;
 use App\Http\Resources\Api\V1\AdminAccountDetailResource;
 use App\Http\Resources\Api\V1\AdminDepositResource;
+use App\Http\Resources\Api\V1\SellerContactResource;
 use App\Http\Resources\Api\V1\UserResource;
 use App\Models\User;
 use App\Services\Accounts\CreateAccountService;
@@ -39,6 +40,13 @@ class AdminAccountController extends Controller
     public function show(User $user): AdminAccountDetailResource
     {
         return new AdminAccountDetailResource($user->load(['seller.wallets', 'networkOwner.networks']));
+    }
+
+    public function contacts(Request $request, User $user): AnonymousResourceCollection
+    {
+        $request->validate(['page' => ['sometimes', 'integer', 'min:1']]);
+
+        return SellerContactResource::collection($user->seller()->firstOrFail()->contacts()->orderBy('name')->paginate(25));
     }
 
     public function update(UpdateAccountProfileRequest $request, User $user, UpdateAccountProfileService $service): AdminAccountDetailResource

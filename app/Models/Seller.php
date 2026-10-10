@@ -41,6 +41,11 @@ class Seller extends Model
         return $this->hasMany(SellerWallet::class);
     }
 
+    public function contacts(): HasMany
+    {
+        return $this->hasMany(SellerContact::class);
+    }
+
     public function deposits(): HasMany
     {
         return $this->hasMany(SellerDeposit::class);

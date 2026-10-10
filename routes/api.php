@@ -24,6 +24,7 @@ use App\Http\Controllers\Api\V1\OwnerAccountingController;
 use App\Http\Controllers\Api\V1\OwnerNetworkController;
 use App\Http\Controllers\Api\V1\SellerCardDeliveryController;
 use App\Http\Controllers\Api\V1\SellerCatalogController;
+use App\Http\Controllers\Api\V1\SellerContactController;
 use App\Http\Controllers\Api\V1\SellerDepositController;
 use App\Http\Controllers\Api\V1\SellerEarningsController;
 use App\Http\Controllers\Api\V1\SellerSaleController;
@@ -66,6 +67,7 @@ Route::prefix('v1')->name('api.v1.')->group(function (): void {
             Route::get('accounting/entries/{entry}', [AdminAccountingController::class, 'show'])->name('admin.accounting.show');
             Route::get('accounts', [AdminAccountController::class, 'index'])->name('admin.accounts.index');
             Route::get('accounts/{user}', [AdminAccountController::class, 'show'])->name('admin.accounts.show');
+            Route::get('accounts/{user}/contacts', [AdminAccountController::class, 'contacts'])->name('admin.accounts.contacts');
             Route::patch('accounts/{user}', [AdminAccountController::class, 'update'])->name('admin.accounts.update');
             Route::post('accounts/{user}/deposits', [AdminAccountController::class, 'storeDeposit'])->name('admin.accounts.deposits.store');
             Route::post('accounts', [AdminAccountController::class, 'store'])->name('admin.accounts.store');
@@ -94,6 +96,7 @@ Route::prefix('v1')->name('api.v1.')->group(function (): void {
             Route::apiResource('deposits', SellerDepositController::class)->only(['index', 'show', 'store'])->names('seller.deposits');
             Route::get('wallets', [SellerWalletController::class, 'index'])->name('seller.wallets.index');
             Route::get('earnings/summary', [SellerEarningsController::class, 'summary'])->name('seller.earnings.summary');
+            Route::apiResource('contacts', SellerContactController::class)->names('seller.contacts');
             Route::get('earnings/sales', [SellerEarningsController::class, 'index'])->name('seller.earnings.sales');
             Route::get('wallets/{wallet}', [SellerWalletController::class, 'show'])->name('seller.wallets.show');
             Route::apiResource('sales', SellerSaleController::class)->only(['index', 'show', 'store'])->names('seller.sales');
