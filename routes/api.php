@@ -65,6 +65,9 @@ Route::prefix('v1')->name('api.v1.')->group(function (): void {
             Route::get('accounting/entries', [AdminAccountingController::class, 'index'])->name('admin.accounting.index');
             Route::get('accounting/entries/{entry}', [AdminAccountingController::class, 'show'])->name('admin.accounting.show');
             Route::get('accounts', [AdminAccountController::class, 'index'])->name('admin.accounts.index');
+            Route::get('accounts/{user}', [AdminAccountController::class, 'show'])->name('admin.accounts.show');
+            Route::patch('accounts/{user}', [AdminAccountController::class, 'update'])->name('admin.accounts.update');
+            Route::post('accounts/{user}/deposits', [AdminAccountController::class, 'storeDeposit'])->name('admin.accounts.deposits.store');
             Route::post('accounts', [AdminAccountController::class, 'store'])->name('admin.accounts.store');
             Route::patch('accounts/{user}/status', [AdminAccountController::class, 'updateStatus'])->name('admin.accounts.status');
             Route::apiResource('networks', AdminNetworkController::class)->only(['index', 'show', 'store'])->names('admin.networks');
