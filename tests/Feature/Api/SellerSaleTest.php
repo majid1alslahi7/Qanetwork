@@ -6,6 +6,7 @@ use App\Enums\UserRole;
 use App\Jobs\ProcessSaleJob;
 use App\Jobs\ReconcileSaleJob;
 use App\Models\AuditEvent;
+use App\Models\InventoryCard;
 use App\Models\Network;
 use App\Models\NetworkOwner;
 use App\Models\NetworkProduct;
@@ -253,6 +254,28 @@ class SellerSaleTest extends TestCase
         $response = $this->postJson('/api/v1/seller/sales/'.$sale->id.'/card/reveal')->assertOk();
         $this->assertSame(['username', 'password'], array_keys($response->json('data.credentials')));
         $this->assertStringNotContainsString('internal-provider-secret', $response->getContent());
+    }
+
+    public function test_explicit_inventory_source_is_used_without_fallback_and_replay_keeps_original_source(): void
+    {
+        [$wallet, $product] = $this->setupSeller();
+        $connection = $product->network->connections()->create(['name' => 'Inventory', 'driver' => 'stored_cards', 'is_enabled' => true, 'is_primary' => false]);
+        $connection->health_status = 'healthy';
+        $connection->last_checked_at = now();
+        $connection->save();
+        $product->fulfillment_connection_id = $connection->id;
+        $product->save();
+        $payload = $this->payload($wallet, $product);
+        $this->postJson('/api/v1/seller/sales', $payload)->assertUnprocessable()->assertJsonValidationErrors('product_id');
+        $this->assertDatabaseCount('sales', 0);
+        InventoryCard::factory()->create(['network_id' => $product->network_id, 'network_product_id' => $product->id]);
+        $id = $this->postJson('/api/v1/seller/sales', $payload)->assertAccepted()->json('data.id');
+        $this->assertDatabaseHas('provider_transactions', ['sale_id' => $id, 'network_connection_id' => $connection->id]);
+        $product->fulfillment_connection_id = null;
+        $product->save();
+        $this->postJson('/api/v1/seller/sales', $payload)->assertAccepted()->assertJsonPath('data.id', $id);
+        $this->assertDatabaseHas('provider_transactions', ['sale_id' => $id, 'network_connection_id' => $connection->id]);
+        $this->assertDatabaseCount('provider_transactions', 1);
     }
 
     private function completedSale(): Sale

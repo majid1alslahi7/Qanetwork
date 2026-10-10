@@ -18,7 +18,10 @@ class ManageNetworkService
     public function create(User $actor, array $data): Network
     {
         return DB::transaction(function () use ($actor, $data): Network {
-            $this->authorizeActor($actor);
+            $currentActor = $this->authorizeActor($actor, true);
+            if ($currentActor->role === UserRole::NETWORK_OWNER) {
+                $data['network_owner_id'] = $currentActor->networkOwner()->firstOrFail()->id;
+            }
             $owner = NetworkOwner::query()->lockForUpdate()->findOrFail($data['network_owner_id']);
             $this->requireActiveOwner($owner);
             $network = new Network($data);
@@ -71,12 +74,14 @@ class ManageNetworkService
         }, 3);
     }
 
-    private function authorizeActor(User $actor): void
+    private function authorizeActor(User $actor, bool $allowOwner = false): User
     {
         $current = User::query()->lockForUpdate()->findOrFail($actor->id);
-        if ($current->role !== UserRole::ADMIN || ! $current->canAccessApplication()) {
+        if ((! $allowOwner && $current->role !== UserRole::ADMIN) || ($allowOwner && ! in_array($current->role, [UserRole::ADMIN, UserRole::NETWORK_OWNER], true)) || ! $current->canAccessApplication()) {
             throw new AuthorizationException;
         }
+
+        return $current;
     }
 
     private function requireActiveOwner(NetworkOwner $owner): void

@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\V1\AccountRegistrationController;
 use App\Http\Controllers\Api\V1\AdminAccountController;
 use App\Http\Controllers\Api\V1\AdminAccountingController;
 use App\Http\Controllers\Api\V1\AdminAuditEventController;
@@ -14,6 +15,7 @@ use App\Http\Controllers\Api\V1\AdminProviderSettlementController;
 use App\Http\Controllers\Api\V1\AdminSaleController;
 use App\Http\Controllers\Api\V1\AdminSellerCommissionController;
 use App\Http\Controllers\Api\V1\AuthController;
+use App\Http\Controllers\Api\V1\NetworkInventoryController;
 use App\Http\Controllers\Api\V1\OwnerAccountingController;
 use App\Http\Controllers\Api\V1\OwnerNetworkController;
 use App\Http\Controllers\Api\V1\SellerCardDeliveryController;
@@ -27,11 +29,16 @@ use Illuminate\Support\Facades\Route;
 Route::get('/user', [AuthController::class, 'me'])->middleware(['auth:sanctum', 'account.active', 'abilities:account', 'throttle:api']);
 
 Route::prefix('v1')->name('api.v1.')->group(function (): void {
+    Route::post('auth/register', [AccountRegistrationController::class, 'store'])->middleware('throttle:registration')->name('auth.register');
     Route::post('auth/login', [AuthController::class, 'login'])->middleware('throttle:login')->name('auth.login');
     Route::middleware(['auth:sanctum', 'account.active', 'abilities:account', 'throttle:api'])->group(function (): void {
         Route::get('auth/me', [AuthController::class, 'me'])->name('auth.me');
         Route::post('auth/logout', [AuthController::class, 'logout'])->name('auth.logout');
         Route::prefix('admin')->middleware(['role:admin', 'abilities:admin'])->group(function (): void {
+            Route::get('networks/{network}/products/{product}/inventory', [NetworkInventoryController::class, 'index'])->name('admin.inventory.index');
+            Route::post('networks/{network}/products/{product}/inventory', [NetworkInventoryController::class, 'store'])->middleware('throttle:inventory-import')->name('admin.inventory.store');
+            Route::get('registrations', [AccountRegistrationController::class, 'index'])->name('admin.registrations.index');
+            Route::post('registrations/{registration}/review', [AccountRegistrationController::class, 'review'])->name('admin.registrations.review');
             Route::get('operations', [AdminOperationsController::class, 'show'])->name('admin.operations.show');
             Route::get('operations/failed-jobs', [AdminOperationsController::class, 'failedJobs'])->name('admin.operations.failed-jobs');
             Route::get('audit-events', [AdminAuditEventController::class, 'index'])->name('admin.audit-events.index');
@@ -74,6 +81,15 @@ Route::prefix('v1')->name('api.v1.')->group(function (): void {
             Route::get('sales/{sale}/delivery', [SellerCardDeliveryController::class, 'show'])->name('seller.delivery.show');
         });
         Route::prefix('owner')->middleware(['role:network_owner', 'abilities:network_owner'])->group(function (): void {
+            Route::patch('networks/{network}/products/{product}/status', [OwnerNetworkController::class, 'updateProductStatus'])->scopeBindings()->name('owner.products.status');
+            Route::patch('networks/{network}/connections/{connection}/status', [OwnerNetworkController::class, 'updateConnectionStatus'])->scopeBindings()->name('owner.connections.status');
+            Route::post('networks/{network}/connections/{connection}/health', [OwnerNetworkController::class, 'checkConnection'])->scopeBindings()->middleware('throttle:network-health')->name('owner.connections.health');
+            Route::post('networks', [OwnerNetworkController::class, 'store'])->name('owner.networks.store');
+            Route::post('networks/{network}/products', [OwnerNetworkController::class, 'storeProduct'])->name('owner.products.store');
+            Route::get('networks/{network}/connections', [OwnerNetworkController::class, 'connections'])->name('owner.connections.index');
+            Route::post('networks/{network}/connections', [OwnerNetworkController::class, 'storeConnection'])->name('owner.connections.store');
+            Route::get('networks/{network}/products/{product}/inventory', [NetworkInventoryController::class, 'index'])->name('owner.inventory.index');
+            Route::post('networks/{network}/products/{product}/inventory', [NetworkInventoryController::class, 'store'])->middleware('throttle:inventory-import')->name('owner.inventory.store');
             Route::get('networks', [OwnerNetworkController::class, 'index'])->name('owner.networks.index');
             Route::get('networks/{network}', [OwnerNetworkController::class, 'show'])->name('owner.networks.show');
             Route::get('networks/{network}/products', [OwnerNetworkController::class, 'products'])->name('owner.products.index');

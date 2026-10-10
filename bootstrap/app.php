@@ -17,7 +17,7 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->redirectGuestsTo(null);
-        $middleware->trimStrings(except: ['credentials.password']);
+        $middleware->trimStrings(except: ['credentials.password', 'cards.*.username', 'cards.*.password']);
         $middleware->alias([
             'account.active' => EnsureAccountAccess::class,
             'role' => EnsureUserRole::class,

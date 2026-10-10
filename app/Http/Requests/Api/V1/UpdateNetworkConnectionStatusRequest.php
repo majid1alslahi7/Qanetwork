@@ -9,6 +9,12 @@ class UpdateNetworkConnectionStatusRequest extends FormRequest
 {
     public function authorize(): bool
     {
+        if ($this->user()?->role === UserRole::NETWORK_OWNER) {
+            abort_unless($this->route('network')->network_owner_id === $this->user()->networkOwner()->firstOrFail()->id, 404);
+
+            return true;
+        }
+
         return $this->user()?->role === UserRole::ADMIN;
     }
 

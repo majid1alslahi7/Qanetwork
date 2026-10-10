@@ -19,7 +19,7 @@ class SellerCatalogProductResource extends JsonResource
         return ['id' => $this->id, 'network_id' => $this->network_id, 'name' => $this->display_name ?: $this->name,
             'face_value' => $this->face_value, 'currency_code' => $this->currency_code,
             'data_limit_bytes' => $this->data_limit_bytes, 'duration_minutes' => $this->duration_minutes,
-            'purchasable' => $price !== null, 'unavailable_reason' => $price === null ? 'pricing_unavailable' : null,
+            'purchasable' => $price !== null && $this->fulfillment_available, 'unavailable_reason' => ! $this->fulfillment_available ? 'source_unavailable' : ($price === null ? 'pricing_unavailable' : null),
             'pricing' => $price === null ? null : [
                 'pricing_rule_id' => $price['pricing_rule_id'], 'commission_rule_id' => $price['commission_rule_id'],
                 'face_value' => $price['face_value'], 'seller_commission' => $price['seller_commission'],

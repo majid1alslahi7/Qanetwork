@@ -66,12 +66,14 @@ class PrepareProviderTransactionService
             $selectedConnection = $connection;
 
             if ($selectedConnection === null) {
+                $sourceId = $lockedSale->product()->firstOrFail()->fulfillment_connection_id;
                 $selectedConnection = NetworkConnection::query()
                     ->where(
                         'network_id',
                         $lockedSale->network_id
                     )
                     ->where('is_enabled', true)
+                    ->when($sourceId !== null, fn ($query) => $query->whereKey($sourceId))
                     ->orderByDesc('is_primary')
                     ->orderBy('created_at')
                     ->first();
@@ -104,7 +106,7 @@ class PrepareProviderTransactionService
              */
             $internalTransactionId = (string) Str::ulid();
 
-            $providerTransaction = new ProviderTransaction();
+            $providerTransaction = new ProviderTransaction;
 
             $providerTransaction->sale_id = $lockedSale->id;
             $providerTransaction->network_connection_id =

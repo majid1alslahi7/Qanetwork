@@ -22,6 +22,14 @@ class ManageNetworkConnectionService
     {
         return DB::transaction(function () use ($actor, $network, $data): NetworkConnection {
             $this->lockNetwork($actor, $network);
+            if ($data['driver'] === 'stored_cards') {
+                $connection = new NetworkConnection(['network_id' => $network->id, 'name' => $data['name'], 'driver' => 'stored_cards', 'config' => [], 'is_primary' => false, 'is_enabled' => false]);
+                $connection->save();
+                $connection->refresh();
+                $this->audit($actor, $connection, 'connection.created', null);
+
+                return $connection;
+            }
             $tls = (bool) ($data['config']['tls'] ?? true);
             $connection = new NetworkConnection([
                 'network_id' => $network->id, 'name' => $data['name'], 'driver' => $data['driver'],
@@ -89,15 +97,18 @@ class ManageNetworkConnectionService
     private function lockNetwork(User $actor, Network $network): Network
     {
         $currentActor = User::query()->lockForUpdate()->findOrFail($actor->id);
-        if ($currentActor->role !== UserRole::ADMIN || ! $currentActor->canAccessApplication()) {
+        if (! in_array($currentActor->role, [UserRole::ADMIN, UserRole::NETWORK_OWNER], true) || ! $currentActor->canAccessApplication()) {
             throw new AuthorizationException;
         }
 
-        return Network::query()->lockForUpdate()->findOrFail($network->id);
+        return Network::query()->when($currentActor->role === UserRole::NETWORK_OWNER, fn ($query) => $query->where('network_owner_id', $currentActor->networkOwner()->firstOrFail()->id))->lockForUpdate()->findOrFail($network->id);
     }
 
     private function validateConfig(NetworkConnection $connection): void
     {
+        if ($connection->driver === 'stored_cards') {
+            return;
+        }
         if (! in_array($connection->driver, ['mikrotik_hotspot', 'mikrotik_user_manager'], true)) {
             throw ValidationException::withMessages(['driver' => 'Unsupported provider driver.']);
         }

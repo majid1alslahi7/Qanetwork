@@ -10,13 +10,13 @@ class StoreNetworkRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        return $this->user()?->role === UserRole::ADMIN;
+        return in_array($this->user()?->role, [UserRole::ADMIN, UserRole::NETWORK_OWNER], true);
     }
 
     public function rules(): array
     {
         return [
-            'network_owner_id' => ['required', 'ulid', Rule::exists('network_owners', 'id')],
+            'network_owner_id' => $this->user()?->role === UserRole::NETWORK_OWNER ? ['prohibited'] : ['required', 'ulid', Rule::exists('network_owners', 'id')],
             'name' => ['required', 'string', 'max:150'],
             'display_name' => ['nullable', 'string', 'max:150'],
             'country_code' => ['sometimes', 'string', 'regex:/^[A-Z]{2}$/'],

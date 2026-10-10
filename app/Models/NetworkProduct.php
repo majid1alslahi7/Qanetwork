@@ -15,6 +15,7 @@ class NetworkProduct extends Model
     protected $fillable = [
         'network_id',
         'external_product_id',
+        'fulfillment_connection_id',
         'code',
         'name',
         'display_name',
@@ -41,6 +42,16 @@ class NetworkProduct extends Model
     public function network(): BelongsTo
     {
         return $this->belongsTo(Network::class);
+    }
+
+    public function fulfillmentConnection(): BelongsTo
+    {
+        return $this->belongsTo(NetworkConnection::class, 'fulfillment_connection_id');
+    }
+
+    public function inventoryCards(): HasMany
+    {
+        return $this->hasMany(InventoryCard::class);
     }
 
     public function sales(): HasMany

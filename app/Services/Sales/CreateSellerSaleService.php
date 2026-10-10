@@ -52,7 +52,7 @@ class CreateSellerSaleService
             if ($product->status !== 'active') {
                 throw ValidationException::withMessages(['product_id' => 'The network or product is not currently available for sale.']);
             }
-            $connections = $network->connections()->where('is_enabled', true)->where('is_primary', true)->get();
+            $connection = $this->networks->connectionForProduct($product);
             $wallet = SellerWallet::query()->where('seller_id', $seller->id)->lockForUpdate()->findOrFail($data['wallet_id']);
             if ($wallet->status !== 'active' || $wallet->currency_code !== $product->currency_code) {
                 throw ValidationException::withMessages(['wallet_id' => 'The wallet must be active and use the product currency.']);
@@ -70,7 +70,7 @@ class CreateSellerSaleService
                 throw ValidationException::withMessages(['wallet_id' => 'Insufficient available wallet balance.']);
             }
             $this->reservations->handle($sale, 'sale:'.$sale->id.':reservation');
-            $this->transactions->handle($sale, $connections->first());
+            $this->transactions->handle($sale, $connection);
 
             return $sale->fresh();
         }, 3);

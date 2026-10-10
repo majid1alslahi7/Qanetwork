@@ -19,6 +19,9 @@ class ManageNetworkProductService
     {
         return DB::transaction(function () use ($actor, $network, $data): NetworkProduct {
             $currentNetwork = $this->lockNetwork($actor, $network);
+            if (isset($data['fulfillment_connection_id'])) {
+                $currentNetwork->connections()->lockForUpdate()->findOrFail($data['fulfillment_connection_id']);
+            }
             $metadata = $data['metadata'] ?? null;
             if (isset($metadata['hotspot'])) {
                 foreach (['limit_bytes_total', 'limit_uptime_seconds'] as $key) {
@@ -69,11 +72,11 @@ class ManageNetworkProductService
     private function lockNetwork(User $actor, Network $network): Network
     {
         $current = User::query()->lockForUpdate()->findOrFail($actor->id);
-        if ($current->role !== UserRole::ADMIN || ! $current->canAccessApplication()) {
+        if (! in_array($current->role, [UserRole::ADMIN, UserRole::NETWORK_OWNER], true) || ! $current->canAccessApplication()) {
             throw new AuthorizationException;
         }
 
-        return Network::query()->lockForUpdate()->findOrFail($network->id);
+        return Network::query()->when($current->role === UserRole::NETWORK_OWNER, fn ($query) => $query->where('network_owner_id', $current->networkOwner()->firstOrFail()->id))->lockForUpdate()->findOrFail($network->id);
     }
 
     /** @param array<string, string>|null $before */

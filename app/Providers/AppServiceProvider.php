@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Providers\Inventory\StoredCardAdapter;
 use App\Providers\MikroTik\MikroTikHotspotAdapter;
 use App\Providers\MikroTik\MikroTikUserManagerAdapter;
 use App\Providers\MikroTik\RouterOsClient;
@@ -37,6 +38,7 @@ class AppServiceProvider extends ServiceProvider
             $registry = new ProviderAdapterRegistry;
             $registry->register('mikrotik_hotspot', $app->make(MikroTikHotspotAdapter::class));
             $registry->register('mikrotik_user_manager', $app->make(MikroTikUserManagerAdapter::class));
+            $registry->register('stored_cards', $app->make(StoredCardAdapter::class));
 
             return $registry;
         });
@@ -66,9 +68,14 @@ class AppServiceProvider extends ServiceProvider
             ];
         });
         RateLimiter::for('api', fn (Request $request) => Limit::perMinute(120)->by((string) $request->user()->id));
+        RateLimiter::for('registration', fn (Request $request) => [
+            Limit::perMinute(3)->by('registration-minute:'.$request->ip()),
+            Limit::perHour(20)->by('registration-hour:'.$request->ip()),
+        ]);
         RateLimiter::for('card-reveal', fn (Request $request) => Limit::perMinute(20)->by('card-reveal:'.$request->user()->id));
         RateLimiter::for('network-health', fn (Request $request) => Limit::perMinute(10)->by('network-health:'.$request->user()->id));
         RateLimiter::for('manual-review', fn (Request $request) => Limit::perMinute(10)->by('manual-review:'.$request->user()->id));
         RateLimiter::for('card-delivery', fn (Request $request) => Limit::perMinute(5)->by('card-delivery:'.$request->user()->id));
+        RateLimiter::for('inventory-import', fn (Request $request) => Limit::perMinute(3)->by('inventory-import:'.$request->user()->id));
     }
 }

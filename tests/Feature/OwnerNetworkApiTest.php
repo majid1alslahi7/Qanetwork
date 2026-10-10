@@ -3,11 +3,13 @@
 namespace Tests\Feature;
 
 use App\Enums\UserRole;
+use App\Jobs\CheckNetworkConnectionHealthJob;
 use App\Models\Network;
 use App\Models\NetworkOwner;
 use App\Models\Seller;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 use Laravel\Sanctum\Sanctum;
 use PHPUnit\Framework\Attributes\TestWith;
@@ -72,6 +74,45 @@ class OwnerNetworkApiTest extends TestCase
         $owner = $this->owner();
         Sanctum::actingAs($owner->user()->firstOrFail(), ['account']);
         $this->getJson('/api/v1/owner/networks')->assertForbidden();
+    }
+
+    public function test_owner_creates_own_network_packages_prices_and_inventory_connection(): void
+    {
+        $owner = $this->owner();
+        Sanctum::actingAs($owner->user()->firstOrFail(), ['account', 'network_owner']);
+        $response = $this->postJson('/api/v1/owner/networks', ['name' => 'New owner network', 'currency_code' => 'YER'])
+            ->assertCreated()->assertJsonPath('data.sales_enabled', false);
+        $networkId = $response->json('data.id');
+        $this->assertDatabaseHas('networks', ['id' => $networkId, 'network_owner_id' => $owner->id, 'status' => 'inactive']);
+        $this->postJson('/api/v1/owner/networks/'.$networkId.'/products', ['name' => 'Daily card', 'face_value' => '250.5000', 'external_product_id' => 'day-stock'])
+            ->assertCreated()->assertJsonPath('data.face_value', '250.5000');
+        $this->postJson('/api/v1/owner/networks/'.$networkId.'/connections', ['name' => 'Stored inventory', 'driver' => 'stored_cards'])
+            ->assertCreated()->assertJsonPath('data.driver', 'stored_cards')->assertJsonPath('data.is_enabled', false);
+        $this->postJson('/api/v1/owner/networks', ['name' => 'Spoofed owner', 'currency_code' => 'YER', 'network_owner_id' => $this->owner()->id])
+            ->assertUnprocessable()->assertJsonValidationErrors('network_owner_id');
+        $foreign = $this->network($this->owner());
+        $this->postJson('/api/v1/owner/networks/'.$foreign->id.'/products', ['name' => 'Foreign', 'face_value' => '100', 'external_product_id' => 'foreign'])->assertNotFound();
+        $this->postJson('/api/v1/owner/networks/'.$foreign->id.'/connections', ['name' => 'Foreign', 'driver' => 'stored_cards'])->assertNotFound();
+    }
+
+    public function test_owner_manages_own_product_and_connection_status_and_queues_health_without_cross_tenant_access(): void
+    {
+        Queue::fake();
+        $owner = $this->owner();
+        $network = $this->network($owner);
+        Sanctum::actingAs($owner->user()->firstOrFail(), ['account', 'network_owner']);
+        $product = $network->products()->create(['code' => 'manage-own', 'name' => 'Own', 'external_product_id' => 'own', 'face_value' => '100', 'currency_code' => 'YER']);
+        $connection = $network->connections()->create(['name' => 'Inventory', 'driver' => 'stored_cards', 'is_enabled' => false]);
+        $base = '/api/v1/owner/networks/'.$network->id;
+        $this->patchJson($base.'/products/'.$product->id.'/status', ['status' => 'active'])->assertOk()->assertJsonPath('data.status', 'active');
+        $this->patchJson($base.'/connections/'.$connection->id.'/status', ['is_enabled' => true, 'is_primary' => true])->assertOk()->assertJsonPath('data.is_enabled', true);
+        $this->postJson($base.'/connections/'.$connection->id.'/health')->assertAccepted();
+        Queue::assertPushed(CheckNetworkConnectionHealthJob::class, fn ($job) => $job->connectionId === $connection->id);
+        $foreign = $this->network($this->owner());
+        $foreignProduct = $foreign->products()->create(['code' => 'foreign-product', 'name' => 'Foreign', 'external_product_id' => 'foreign', 'face_value' => '100', 'currency_code' => 'YER']);
+        $this->patchJson('/api/v1/owner/networks/'.$foreign->id.'/products/'.$foreignProduct->id.'/status', ['status' => 'active'])->assertNotFound();
+        $this->patchJson($base.'/products/'.$foreignProduct->id.'/status', ['status' => 'active'])->assertNotFound();
+        $this->assertFalse($network->fresh()->sales_enabled);
     }
 
     private function owner(): NetworkOwner

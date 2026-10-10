@@ -46,8 +46,12 @@ class PaidSaleCardService
                 $credentials[$key] = $stored[$key];
             }
         }
-        if (! isset($credentials['pin']) && ! isset($credentials['username'], $credentials['password'])) {
+        $usernameOnly = ($stored['login_mode'] ?? null) === 'username_only' && isset($credentials['username']) && ! isset($credentials['password']);
+        if (! isset($credentials['pin']) && ! isset($credentials['username'], $credentials['password']) && ! $usernameOnly) {
             throw new ServiceUnavailableHttpException(null, 'Card credentials are temporarily unavailable.');
+        }
+        if ($usernameOnly) {
+            $credentials['login_mode'] = 'username_only';
         }
 
         return $credentials;

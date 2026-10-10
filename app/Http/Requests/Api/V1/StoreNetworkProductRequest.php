@@ -12,6 +12,12 @@ class StoreNetworkProductRequest extends FormRequest
 {
     public function authorize(): bool
     {
+        if ($this->user()?->role === UserRole::NETWORK_OWNER) {
+            abort_unless($this->route('network')->network_owner_id === $this->user()->networkOwner()->firstOrFail()->id, 404);
+
+            return true;
+        }
+
         return $this->user()?->role === UserRole::ADMIN;
     }
 
@@ -20,6 +26,7 @@ class StoreNetworkProductRequest extends FormRequest
         return [
             'name' => ['required', 'string', 'max:150'],
             'display_name' => ['nullable', 'string', 'max:150'],
+            'fulfillment_connection_id' => ['nullable', 'ulid', Rule::exists('network_connections', 'id')->where('network_id', $this->route('network')->id)],
             'external_product_id' => ['required', 'string', 'max:191', 'regex:/\A[^\x00-\x1F\x7F]+\z/u',
                 Rule::unique('network_products')->where('network_id', $this->route('network')->id)],
             'face_value' => ['bail', 'required', 'string', 'regex:/\A(?:0|[1-9][0-9]{0,15})(?:\.[0-9]{1,4})?\z/',
