@@ -34,6 +34,9 @@ class NetworkInventoryApiTest extends TestCase
         }
         $this->postJson($path, ['cards' => [['username' => 'fresh'], ['username' => '00123', 'password' => 'changed']]])->assertUnprocessable();
         $this->assertDatabaseCount('inventory_cards', 2);
+        $this->postJson($path, ['cards' => ['invalid-key' => ['username' => 'new-card']]])
+            ->assertUnprocessable()->assertJsonValidationErrors('cards');
+        $this->assertDatabaseCount('inventory_cards', 2);
     }
 
     public function test_csv_upload_preserves_leading_zeroes_and_extra_columns_are_rejected_atomically(): void

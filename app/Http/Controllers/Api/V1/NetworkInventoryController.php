@@ -34,7 +34,7 @@ class NetworkInventoryController extends Controller
         $target = $this->product($request, $network, $product);
         $validated = $request->validate([
             'file' => ['required_without:cards', Rule::prohibitedIf($request->has('cards')), 'file', 'max:5120', 'extensions:xlsx,csv'],
-            'cards' => ['required_without:file', Rule::prohibitedIf($request->hasFile('file')), 'array', 'min:1', 'max:5000'],
+            'cards' => ['required_without:file', Rule::prohibitedIf($request->hasFile('file')), 'array', 'list', 'min:1', 'max:5000'],
             'cards.*' => ['array:username,password'],
             'cards.*.username' => ['required', 'string', 'max:255'],
             'cards.*.password' => ['nullable', 'string', 'max:1024'],

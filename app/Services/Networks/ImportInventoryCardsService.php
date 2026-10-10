@@ -19,7 +19,7 @@ class ImportInventoryCardsService
     /** @param list<array{username: string, password?: ?string}> $rows */
     public function handle(User $actor, Network $network, NetworkProduct $product, #[\SensitiveParameter] array $rows): int
     {
-        if (count($rows) < 1 || count($rows) > 5000) {
+        if (! array_is_list($rows) || count($rows) < 1 || count($rows) > 5000) {
             throw ValidationException::withMessages(['file' => 'Import between 1 and 5000 cards per batch.']);
         }
         try {
