@@ -10,7 +10,7 @@ use Throwable;
 
 class CheckNetworkConnectionHealthService
 {
-    public function __construct(private readonly ProviderAdapterRegistry $registry) {}
+    public function __construct(private readonly ProviderAdapterRegistry $registry, private readonly SaleableNetworkService $networks) {}
 
     public function handle(NetworkConnection $connection): NetworkConnection
     {
@@ -52,7 +52,9 @@ class CheckNetworkConnectionHealthService
                     $network->last_success_at = $startedAt;
                 } else {
                     $network->last_failure_at = $startedAt;
-                    $network->sales_enabled = false;
+                    if (! $this->networks->hasHealthyExplicitSource($network)) {
+                        $network->sales_enabled = false;
+                    }
                 }
                 $network->save();
             }

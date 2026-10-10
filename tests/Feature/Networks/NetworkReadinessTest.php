@@ -6,14 +6,17 @@ use App\Enums\UserRole;
 use App\Jobs\CheckNetworkConnectionHealthJob;
 use App\Models\Network;
 use App\Models\NetworkOwner;
+use App\Models\NetworkProduct;
 use App\Models\User;
 use App\Providers\Contracts\ProviderAdapter;
 use App\Providers\Registry\ProviderAdapterRegistry;
 use App\Services\Networks\CheckNetworkConnectionHealthService;
+use App\Services\Networks\SaleableNetworkService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 use Laravel\Sanctum\Sanctum;
+use PHPUnit\Framework\Attributes\TestWith;
 use RuntimeException;
 use Tests\TestCase;
 
@@ -144,6 +147,94 @@ class NetworkReadinessTest extends TestCase
         $this->patchJson('/api/v1/admin/networks/'.$network->id.'/sales', ['sales_enabled' => true])->assertForbidden();
         $this->postJson('/api/v1/admin/networks/'.$network->id.'/connections/'.$connection->id.'/health')->assertForbidden();
         Queue::assertNothingPushed();
+    }
+
+    public function test_primary_failure_preserves_admin_approval_for_a_healthy_explicit_product_source(): void
+    {
+        [$network, $primary] = $this->setupNetwork();
+        $network->sales_enabled = true;
+        $network->save();
+        $this->explicitProduct($network);
+        $this->adapter()->shouldReceive('healthCheck')->once()->andReturn(false);
+        app(CheckNetworkConnectionHealthService::class)->handle($primary);
+        $this->assertTrue($network->fresh()->sales_enabled);
+        $this->assertSame('unhealthy', $network->fresh()->health_status);
+        $this->assertTrue(app(SaleableNetworkService::class)->query()->whereKey($network->id)->exists());
+        $this->patchJson('/api/v1/admin/networks/'.$network->id.'/sales', ['sales_enabled' => false])->assertOk();
+        $this->assertFalse(app(SaleableNetworkService::class)->query()->whereKey($network->id)->exists());
+    }
+
+    #[TestWith(['ready'])]
+    #[TestWith(['stale'])]
+    #[TestWith(['disabled'])]
+    #[TestWith(['inactive'])]
+    #[TestWith(['owner'])]
+    #[TestWith(['network'])]
+    #[TestWith(['unhealthy'])]
+    #[TestWith(['foreign'])]
+    public function test_admin_approval_accepts_only_a_ready_explicit_source_and_active_owner(string $case): void
+    {
+        [$network] = $this->setupNetwork();
+        $product = $this->explicitProduct($network);
+        $source = $product->fulfillmentConnection;
+        if ($case === 'stale') {
+            $source->last_checked_at = now()->subMinutes(6);
+            $source->save();
+        } elseif ($case === 'disabled') {
+            $source->is_enabled = false;
+            $source->save();
+        } elseif ($case === 'inactive') {
+            $product->status = 'inactive';
+            $product->save();
+        } elseif ($case === 'owner') {
+            $network->owner()->update(['status' => 'suspended']);
+        } elseif ($case === 'network') {
+            $network->status = 'inactive';
+            $network->save();
+        } elseif ($case === 'unhealthy') {
+            $source->health_status = 'unhealthy';
+            $source->save();
+        } elseif ($case === 'foreign') {
+            [$foreign] = $this->setupNetwork();
+            $source->network_id = $foreign->id;
+            $source->save();
+        }
+        $response = $this->patchJson('/api/v1/admin/networks/'.$network->id.'/sales', ['sales_enabled' => true]);
+        if ($case === 'ready') {
+            $response->assertOk();
+            $this->assertTrue($network->fresh()->sales_enabled);
+        } else {
+            $response->assertUnprocessable()->assertJsonValidationErrors('sales_enabled');
+            $this->assertFalse($network->fresh()->sales_enabled);
+        }
+    }
+
+    public function test_health_dispatch_includes_active_explicit_sources_but_not_unused_or_disabled_sources(): void
+    {
+        Queue::fake();
+        [$network, $primary] = $this->setupNetwork();
+        $product = $this->explicitProduct($network);
+        $source = $product->fulfillmentConnection;
+        $source->last_checked_at = null;
+        $source->save();
+        $network->connections()->create(['name' => 'Unused', 'driver' => 'stored_cards', 'is_enabled' => true]);
+        $this->artisan('networks:check-health')->assertSuccessful();
+        Queue::assertPushed(CheckNetworkConnectionHealthJob::class, 2);
+        Queue::assertPushed(CheckNetworkConnectionHealthJob::class, fn ($job) => $job->connectionId === $source->id);
+        Queue::assertPushed(CheckNetworkConnectionHealthJob::class, fn ($job) => $job->connectionId === $primary->id);
+    }
+
+    private function explicitProduct(Network $network): NetworkProduct
+    {
+        $source = $network->connections()->create(['name' => 'Stock', 'driver' => 'stored_cards', 'is_enabled' => true]);
+        $source->health_status = 'healthy';
+        $source->last_checked_at = now();
+        $source->save();
+        $product = $network->products()->create(['code' => 'stock', 'name' => 'Stock product', 'external_product_id' => 'stock', 'face_value' => '100', 'currency_code' => 'YER', 'fulfillment_connection_id' => $source->id]);
+        $product->status = 'active';
+        $product->save();
+
+        return $product;
     }
 
     private function adapter(): mixed

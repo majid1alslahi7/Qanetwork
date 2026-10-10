@@ -65,6 +65,11 @@ class NetworkConnection extends Model
         );
     }
 
+    public function products(): HasMany
+    {
+        return $this->hasMany(NetworkProduct::class, 'fulfillment_connection_id');
+    }
+
     public function setCredentials(array $credentials): void
     {
         $this->credentials_encrypted = $credentials;

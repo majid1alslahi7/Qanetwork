@@ -8,15 +8,20 @@ use App\Models\CommissionRule;
 use App\Models\Network;
 use App\Models\NetworkOwner;
 use App\Models\NetworkProduct;
+use App\Models\Sale;
 use App\Models\Seller;
 use App\Models\SellerWallet;
+use App\Models\SoldCard;
 use App\Models\User;
+use App\Services\Networks\ImportInventoryCardsService;
 use App\Services\Pricing\PublishPricingRuleService;
+use App\Services\Sales\ProcessSaleService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Laravel\Sanctum\Sanctum;
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\TestWith;
 use Tests\TestCase;
 
 class SellerCatalogTest extends TestCase
@@ -222,6 +227,46 @@ class SellerCatalogTest extends TestCase
         $this->getJson('/api/v1/seller/networks')->assertOk()->assertJsonCount(0, 'data');
         $this->postJson('/api/v1/seller/sales', $this->purchase($product, $wallet))->assertUnprocessable()->assertJsonValidationErrors('product_id');
         $this->assertDatabaseCount('sales', 0);
+    }
+
+    #[TestWith(['unhealthy'])]
+    #[TestWith(['missing'])]
+    #[TestWith(['duplicate'])]
+    public function test_explicit_inventory_can_sell_during_primary_outage_without_falling_back_for_other_products(string $primaryState): void
+    {
+        [$product, $wallet, $admin] = $this->scenario();
+        Queue::fake();
+        $network = $product->network;
+        $network->health_status = 'unhealthy';
+        $network->save();
+        $network->connections()->update(['health_status' => 'unhealthy']);
+        if ($primaryState === 'missing') {
+            $network->connections()->delete();
+        } elseif ($primaryState === 'duplicate') {
+            $network->connections()->create(['name' => 'Duplicate', 'driver' => 'test', 'is_enabled' => true, 'is_primary' => true]);
+        }
+        $source = $network->connections()->create(['name' => 'Stock', 'driver' => 'stored_cards', 'is_enabled' => true]);
+        $source->health_status = 'healthy';
+        $source->last_checked_at = now();
+        $source->save();
+        $product->fulfillment_connection_id = $source->id;
+        $product->save();
+        app(ImportInventoryCardsService::class)->handle($admin, $network, $product, [['username' => '000001']]);
+        $legacy = $network->products()->create(['code' => 'legacy', 'name' => 'Router product', 'face_value' => '1000', 'currency_code' => 'YER', 'external_product_id' => 'legacy']);
+        app(PublishPricingRuleService::class)->handle($admin, $legacy, '800', '150');
+        $this->getJson('/api/v1/seller/networks')->assertOk()->assertJsonCount(1, 'data');
+        $this->getJson($this->url($product))->assertOk()->assertJsonPath('data.purchasable', true);
+        $this->getJson($this->url($legacy))->assertOk()->assertJsonPath('data.purchasable', false);
+        $this->postJson('/api/v1/seller/sales', $this->purchase($legacy, $wallet))->assertUnprocessable()->assertJsonValidationErrors('product_id');
+        $this->assertDatabaseCount('sales', 0);
+        $this->postJson('/api/v1/seller/sales', $this->purchase($product, $wallet))->assertAccepted();
+        $sale = Sale::query()->sole();
+        $this->assertSame($source->id, $sale->providerTransaction()->sole()->network_connection_id);
+        $this->assertTrue(app(ProcessSaleService::class)->handle($sale, $source)->completed);
+        $this->assertSame('150.0000', $wallet->fresh()->balance);
+        $this->assertSame('0.0000', $wallet->fresh()->reserved_balance);
+        $this->assertSame('000001', SoldCard::query()->sole()->credentials()['username']);
+        $this->getJson($this->url($product))->assertOk()->assertJsonPath('data.purchasable', false);
     }
 
     private function scenario(): array

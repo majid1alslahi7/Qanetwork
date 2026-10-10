@@ -17,19 +17,35 @@ class SaleableNetworkService
         $freshSince = now()->subMinutes(5);
 
         return Network::query()->where('status', 'active')->where('sales_enabled', true)
-            ->where('health_status', 'healthy')->where('last_health_check_at', '>=', $freshSince)
             ->whereHas('owner', function (Builder $query): void {
                 $query->where('status', 'active')->where(function (Builder $query): void {
                     $query->whereNull('user_id')->orWhereHas('user', function (Builder $query): void {
                         $query->where('status', 'active')->where('role', UserRole::NETWORK_OWNER->value);
                     });
                 });
-            })->whereHas('connections', function (Builder $query): void {
-                $query->where('is_enabled', true)->where('is_primary', true);
-            }, '=', 1)->whereHas('connections', function (Builder $query) use ($freshSince): void {
-                $query->where('is_enabled', true)->where('is_primary', true)->where('health_status', 'healthy')
-                    ->where('last_checked_at', '>=', $freshSince);
+            })->where(function (Builder $query) use ($freshSince): void {
+                $query->where(function (Builder $legacy) use ($freshSince): void {
+                    $legacy->where('health_status', 'healthy')->where('last_health_check_at', '>=', $freshSince)
+                        ->whereHas('connections', fn (Builder $connections) => $connections->where('is_enabled', true)->where('is_primary', true), '=', 1)
+                        ->whereHas('connections', fn (Builder $connections) => $connections->where('is_enabled', true)->where('is_primary', true)->where('health_status', 'healthy')->where('last_checked_at', '>=', $freshSince));
+                })->orWhereHas('products', fn (Builder $products) => $this->healthyExplicitProducts($products));
             });
+    }
+
+    public function hasHealthyExplicitSource(Network $network): bool
+    {
+        return $this->healthyExplicitProducts($network->products()->getQuery())->exists();
+    }
+
+    /** @param Builder<NetworkProduct> $products
+     * @return Builder<NetworkProduct>
+     */
+    private function healthyExplicitProducts(Builder $products): Builder
+    {
+        return $products->where('status', 'active')->whereNotNull('fulfillment_connection_id')
+            ->whereHas('fulfillmentConnection', fn (Builder $connections) => $connections
+                ->whereColumn('network_connections.network_id', 'network_products.network_id')
+                ->where('is_enabled', true)->where('health_status', 'healthy')->where('last_checked_at', '>=', now()->subMinutes(5)));
     }
 
     public function ensureAvailable(Network $network): void
@@ -41,9 +57,12 @@ class SaleableNetworkService
 
     public function connectionForProduct(NetworkProduct $product): NetworkConnection
     {
-        $connection = $product->fulfillment_connection_id !== null
-            ? $product->network->connections()->whereKey($product->fulfillment_connection_id)->first()
-            : $product->network->connections()->where('is_enabled', true)->where('is_primary', true)->sole();
+        if ($product->fulfillment_connection_id !== null) {
+            $connection = $product->network->connections()->whereKey($product->fulfillment_connection_id)->first();
+        } else {
+            $primary = $product->network->connections()->where('is_enabled', true)->where('is_primary', true)->get();
+            $connection = $primary->count() === 1 ? $primary->first() : null;
+        }
         if ($connection === null || ! $connection->is_enabled || $connection->health_status !== 'healthy'
             || $connection->last_checked_at === null || $connection->last_checked_at->lt(now()->subMinutes(5))) {
             throw ValidationException::withMessages(['product_id' => 'The selected product source is not currently available.']);

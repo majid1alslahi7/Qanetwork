@@ -13,6 +13,8 @@ use Illuminate\Validation\ValidationException;
 
 class UpdateNetworkSalesService
 {
+    public function __construct(private readonly SaleableNetworkService $networks) {}
+
     public function handle(User $actor, Network $network, bool $enabled): Network
     {
         return DB::transaction(function () use ($actor, $network, $enabled): Network {
@@ -26,12 +28,13 @@ class UpdateNetworkSalesService
             if ($enabled) {
                 $connections = $current->connections()->where('is_enabled', true)->where('is_primary', true)->lockForUpdate()->get();
                 $primary = $connections->count() === 1 ? $connections->first() : null;
-                if ($owner->status !== 'active' || ($ownerUser !== null && ! $ownerUser->canAccessApplication())
-                    || $current->status !== 'active' || $current->health_status !== 'healthy'
-                    || $current->last_health_check_at === null || $current->last_health_check_at->lt(now()->subMinutes(5))
-                    || $primary === null || $primary->health_status !== 'healthy'
-                    || $primary->last_checked_at === null || $primary->last_checked_at->lt(now()->subMinutes(5))) {
-                    throw ValidationException::withMessages(['sales_enabled' => 'An active network and owner with a recently verified primary connection are required.']);
+                $primaryReady = $current->health_status === 'healthy'
+                    && $current->last_health_check_at !== null && $current->last_health_check_at->gte(now()->subMinutes(5))
+                    && $primary !== null && $primary->health_status === 'healthy'
+                    && $primary->last_checked_at !== null && $primary->last_checked_at->gte(now()->subMinutes(5));
+                if ($owner->status !== 'active' || ($ownerUser !== null && (! $ownerUser->canAccessApplication() || $ownerUser->role !== UserRole::NETWORK_OWNER))
+                    || $current->status !== 'active' || (! $primaryReady && ! $this->networks->hasHealthyExplicitSource($current))) {
+                    throw ValidationException::withMessages(['sales_enabled' => 'An active network and owner with a recently verified primary or explicitly assigned product source are required.']);
                 }
             }
             if ($current->sales_enabled === $enabled) {

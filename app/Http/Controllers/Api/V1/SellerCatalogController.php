@@ -61,7 +61,8 @@ class SellerCatalogController extends Controller
 
     private function attachOffer(NetworkProduct $product, string $sellerId): void
     {
-        $connection = $product->fulfillment_connection_id !== null ? $product->fulfillmentConnection : $product->network->connections->first();
+        $connection = $product->fulfillment_connection_id !== null ? $product->fulfillmentConnection
+            : ($product->network->connections->count() === 1 ? $product->network->connections->first() : null);
         $available = $connection !== null && $connection->network_id === $product->network_id && $connection->is_enabled
             && $connection->health_status === 'healthy' && $connection->last_checked_at !== null
             && $connection->last_checked_at->gte(now()->subMinutes(5))
