@@ -25,6 +25,7 @@ use App\Http\Controllers\Api\V1\OwnerNetworkController;
 use App\Http\Controllers\Api\V1\SellerCardDeliveryController;
 use App\Http\Controllers\Api\V1\SellerCatalogController;
 use App\Http\Controllers\Api\V1\SellerDepositController;
+use App\Http\Controllers\Api\V1\SellerEarningsController;
 use App\Http\Controllers\Api\V1\SellerSaleController;
 use App\Http\Controllers\Api\V1\SellerSoldCardController;
 use App\Http\Controllers\Api\V1\SellerWalletController;
@@ -89,6 +90,8 @@ Route::prefix('v1')->name('api.v1.')->group(function (): void {
             Route::get('networks/{network}/products/{product}', [SellerCatalogController::class, 'product'])->name('seller.catalog.product');
             Route::apiResource('deposits', SellerDepositController::class)->only(['index', 'show', 'store'])->names('seller.deposits');
             Route::get('wallets', [SellerWalletController::class, 'index'])->name('seller.wallets.index');
+            Route::get('earnings/summary', [SellerEarningsController::class, 'summary'])->name('seller.earnings.summary');
+            Route::get('earnings/sales', [SellerEarningsController::class, 'index'])->name('seller.earnings.sales');
             Route::get('wallets/{wallet}', [SellerWalletController::class, 'show'])->name('seller.wallets.show');
             Route::apiResource('sales', SellerSaleController::class)->only(['index', 'show', 'store'])->names('seller.sales');
             Route::post('sales/{sale}/card/reveal', [SellerSoldCardController::class, 'reveal'])->middleware('throttle:card-reveal')->name('seller.card.reveal');
