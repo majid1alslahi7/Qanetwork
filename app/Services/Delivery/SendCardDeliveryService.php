@@ -9,6 +9,7 @@ use App\Models\CardDelivery;
 use App\Models\Sale;
 use App\Models\User;
 use App\Services\Delivery\Contracts\SmsSender;
+use App\Services\Delivery\Contracts\SmsStatusReader;
 use App\Services\Delivery\Data\SmsSubmissionResult;
 use App\Services\Sales\PaidSaleCardService;
 use Illuminate\Support\Facades\DB;
@@ -23,6 +24,9 @@ class SendCardDeliveryService
     public function handle(string $deliveryId): CardDelivery
     {
         $record = CardDelivery::query()->findOrFail($deliveryId);
+        if ($record->status === 'submitted' && $this->sender instanceof SmsStatusReader) {
+            return $this->refreshStatus($record);
+        }
         $payload = DB::transaction(function () use ($record): ?array {
             $actor = User::query()->lockForUpdate()->findOrFail($record->requested_by);
             $sale = Sale::query()->lockForUpdate()->findOrFail($record->sale_id);
@@ -111,6 +115,33 @@ class SendCardDeliveryService
     {
         $delivery->submitted_at = now();
         $this->transition($delivery, 'submitted');
+    }
+
+    private function refreshStatus(CardDelivery $record): CardDelivery
+    {
+        if (! $this->sender->available() || $record->provider_reference === null) {
+            return $record;
+        }
+        try {
+            $status = $this->sender->status($record->provider_reference);
+        } catch (Throwable) {
+            $status = null;
+        }
+
+        return DB::transaction(function () use ($record, $status): CardDelivery {
+            $delivery = CardDelivery::query()->lockForUpdate()->findOrFail($record->id);
+            if ($delivery->status === 'submitted') {
+                if ($status === 'sent') {
+                    $this->transition($delivery, 'sent');
+                } elseif ($status === 'failed') {
+                    $this->transition($delivery, 'failed', 'provider_delivery_failed');
+                } else {
+                    $delivery->touch();
+                }
+            }
+
+            return $delivery;
+        }, 3);
     }
 
     private function retry(CardDelivery $delivery): void

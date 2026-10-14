@@ -17,7 +17,7 @@ use App\Providers\MikroTik\SocketRouterOsClient;
 use App\Providers\MikroTik\StreamRouterOsConnector;
 use App\Providers\Registry\ProviderAdapterRegistry;
 use App\Services\Delivery\Contracts\SmsSender;
-use App\Services\Delivery\UnavailableSmsSender;
+use App\Services\Delivery\QuickConnectSmsSender;
 use App\Services\Operations\OperationsMonitor;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Console\Events\ScheduledTaskFinished;
@@ -37,7 +37,7 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->singleton(OperationsMonitor::class);
-        $this->app->bind(SmsSender::class, UnavailableSmsSender::class);
+        $this->app->bind(SmsSender::class, QuickConnectSmsSender::class);
         $this->app->bind(RouterOsConnector::class, StreamRouterOsConnector::class);
         $this->app->bind(RouterOsClient::class, SocketRouterOsClient::class);
         $this->app->singleton(ProviderAdapterRegistry::class, function ($app): ProviderAdapterRegistry {

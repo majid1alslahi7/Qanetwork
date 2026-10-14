@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Jobs\SendCardDeliveryJob;
 use App\Models\CardDelivery;
 use App\Services\Delivery\Contracts\SmsSender;
+use App\Services\Delivery\Contracts\SmsStatusReader;
 use Illuminate\Console\Command;
 
 class RecoverCardDeliveriesCommand extends Command
@@ -22,11 +23,16 @@ class RecoverCardDeliveriesCommand extends Command
             return self::FAILURE;
         }
         $available = $sender->available();
-        $deliveries = CardDelivery::query()->where(function ($query) use ($available): void {
+        $deliveries = CardDelivery::query()->where(function ($query) use ($available, $sender): void {
             $query->where(function ($query): void {
                 $query->where('status', 'sending')->where('updated_at', '<=', now()->subMinutes(2));
             });
             if ($available) {
+                if ($sender instanceof SmsStatusReader) {
+                    $query->orWhere(function ($query): void {
+                        $query->where('status', 'submitted')->whereNotNull('provider_reference')->where('updated_at', '<=', now()->subMinutes(2));
+                    });
+                }
                 $query->orWhere(function ($query): void {
                     $query->whereIn('status', ['queued', 'awaiting_configuration'])->where('updated_at', '<=', now()->subMinutes(2));
                 })->orWhere(function ($query): void {

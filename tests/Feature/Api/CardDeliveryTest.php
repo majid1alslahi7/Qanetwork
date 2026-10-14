@@ -21,9 +21,11 @@ use App\Services\Delivery\UnavailableSmsSender;
 use App\Services\Sales\FinalizeConfirmedSaleService;
 use App\Services\Sales\ReserveSaleBalanceService;
 use App\Services\Sales\SaleFinancialSnapshotService;
+use Illuminate\Bus\UniqueLock;
 use Illuminate\Contracts\Queue\Job;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Laravel\Sanctum\Sanctum;
 use Mockery\MockInterface;
@@ -264,6 +266,43 @@ class CardDeliveryTest extends TestCase
     public function test_invalid_recovery_limit_is_rejected(): void
     {
         $this->artisan('delivery:recover', ['--limit' => '1001'])->expectsOutput('The --limit option must be an integer between 1 and 1000.')->assertFailed();
+    }
+
+    #[DataProvider('quickConnectStates')]
+    public function test_provider_status_updates_delivery_without_resending_or_changing_finances(string $providerStatus, string $expectedStatus): void
+    {
+        $this->freezeTime();
+        $sale = $this->sale();
+        Queue::fake([SendCardDeliveryJob::class]);
+        config(['services.quick_connect.enabled' => true, 'services.quick_connect.api_key' => 'qc_live_test']);
+        $base = 'https://aalcgjgocszngpcqzjih.supabase.co/functions/v1/public-api';
+        $reference = '8f3c2a91-3456-4567-8123-123456789abc';
+        Http::preventStrayRequests();
+        Http::fake([
+            $base.'/messages' => Http::response(['ids' => [$reference], 'channel_requested' => 'sms', 'channels_used' => ['sms'], 'to' => '+967771231234', 'status' => 'queued'], 201),
+            $base.'/messages/'.$reference => Http::response(['success' => true, 'data' => ['id' => $reference, 'channel' => 'sms', 'status' => $providerStatus]]),
+        ]);
+        $id = $this->postJson($this->url($sale), $this->payload())->assertAccepted()->json('data.id');
+        $this->assertSame('submitted', app(SendCardDeliveryService::class)->handle($id)->status);
+        app(UniqueLock::class)->release(Queue::pushed(SendCardDeliveryJob::class)->first());
+        $this->travel(3)->minutes();
+
+        $this->artisan('delivery:recover')->assertSuccessful();
+        $delivery = app(SendCardDeliveryService::class)->handle($id);
+
+        $this->assertSame($expectedStatus, $delivery->status);
+        $this->assertSame(1, $delivery->attempt_count);
+        $this->assertSame($reference, $delivery->provider_reference);
+        $this->assertSame($expectedStatus === 'failed' ? 'provider_delivery_failed' : null, $delivery->failure_code);
+        $this->getJson($this->url($sale))->assertOk()->assertJsonPath('data.status', $expectedStatus);
+        Http::assertSentCount(2);
+        Queue::assertPushed(SendCardDeliveryJob::class, 2);
+        $this->unchangedFinances($sale);
+    }
+
+    public static function quickConnectStates(): array
+    {
+        return [['sent', 'sent'], ['failed', 'failed'], ['pending', 'submitted'], ['queued', 'submitted'], ['unknown', 'submitted']];
     }
 
     private function sender(): MockInterface
