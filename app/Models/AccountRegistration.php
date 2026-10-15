@@ -12,14 +12,14 @@ class AccountRegistration extends Model
     /** @use HasFactory<AccountRegistrationFactory> */
     use HasFactory, HasUlids;
 
-    protected $fillable = ['name', 'email', 'password', 'role', 'business_name', 'currency_code'];
+    protected $fillable = ['name', 'email', 'password', 'role', 'business_name', 'currency_code', 'phone'];
 
-    protected $hidden = ['password'];
+    protected $hidden = ['password', 'phone'];
 
     protected $attributes = ['status' => 'pending'];
 
     protected function casts(): array
     {
-        return ['password' => 'hashed', 'reviewed_at' => 'datetime'];
+        return ['password' => 'hashed', 'reviewed_at' => 'datetime', 'phone' => 'encrypted'];
     }
 }

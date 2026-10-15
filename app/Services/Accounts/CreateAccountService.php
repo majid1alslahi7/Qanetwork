@@ -8,6 +8,7 @@ use App\Models\NetworkOwner;
 use App\Models\Seller;
 use App\Models\SellerWallet;
 use App\Models\User;
+use App\Services\Delivery\YemenPhoneNumber;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -29,6 +30,7 @@ class CreateAccountService
             $user = new User(['name' => $data['name'], 'email' => $data['email'], 'password' => $data['password']]);
             $user->role = UserRole::from($data['role']);
             $user->status = 'active';
+            $user->sms_phone = YemenPhoneNumber::normalize($data['phone'] ?? null);
             $user->save();
             if ($user->role === UserRole::SELLER) {
                 $seller = new Seller([

@@ -27,17 +27,27 @@ class QuickConnectSmsSender implements SmsSender, SmsStatusReader
         if (! $this->available() || preg_match('/\A\+967(?:70|71|73|77)[0-9]{7}\z/', $recipient) !== 1) {
             return new SmsSubmissionResult(SmsSubmissionStatus::REJECTED);
         }
-        $lines = ['QaNetwork — بيانات كرت الإنترنت'];
+        $lines = [];
         foreach (['username' => 'اسم المستخدم', 'password' => 'كلمة المرور', 'pin' => 'رقم الكرت', 'serial' => 'الرقم التسلسلي'] as $key => $label) {
             if (isset($credentials[$key]) && is_string($credentials[$key]) && $credentials[$key] !== '') {
                 $lines[] = $label.': '.$credentials[$key];
             }
         }
-        if (count($lines) === 1) {
+        if ($lines === []) {
+            return new SmsSubmissionResult(SmsSubmissionStatus::REJECTED);
+        }
+        $network = isset($credentials['network_name']) && is_string($credentials['network_name']) ? $credentials['network_name'] : null;
+
+        return $this->sendText($recipient, MessageTemplate::format('بيانات كرت الإنترنت', $lines, $network));
+    }
+
+    public function sendText(#[SensitiveParameter] string $recipient, #[SensitiveParameter] string $body): SmsSubmissionResult
+    {
+        if (! $this->available() || YemenPhoneNumber::normalize($recipient) !== $recipient || trim($body) === '' || mb_strlen($body) > 1000) {
             return new SmsSubmissionResult(SmsSubmissionStatus::REJECTED);
         }
         try {
-            $response = $this->client()->post('/messages', ['channel' => 'sms', 'to' => $recipient, 'body' => implode("\n", $lines)]);
+            $response = $this->client()->post('/messages', ['channel' => 'sms', 'to' => $recipient, 'body' => $body]);
         } catch (ConnectionException) {
             return new SmsSubmissionResult(SmsSubmissionStatus::UNKNOWN);
         }

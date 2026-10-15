@@ -62,6 +62,7 @@ class SendCardDeliveryService
             }
             try {
                 $credentials = $this->cards->credentials($this->cards->card($sale));
+                $credentials['network_name'] = (string) $sale->network()->value('name');
                 $recipient = $delivery->recipient_encrypted;
             } catch (ConflictHttpException|ServiceUnavailableHttpException) {
                 $this->transition($delivery, 'failed', 'card_unavailable');

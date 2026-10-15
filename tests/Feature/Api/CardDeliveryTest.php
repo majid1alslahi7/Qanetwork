@@ -63,7 +63,7 @@ class CardDeliveryTest extends TestCase
         Queue::fake([SendCardDeliveryJob::class]);
         $sender = $this->sender();
         $id = $this->postJson($this->url($sale), $this->payload())->assertAccepted()->json('data.id');
-        $sender->shouldReceive('submit')->once()->with('+967771231234', ['username' => 'card-user', 'password' => 'card-secret'], 'card-delivery:'.$id)
+        $sender->shouldReceive('submit')->once()->with('+967771231234', ['username' => 'card-user', 'password' => 'card-secret', 'network_name' => 'Network'], 'card-delivery:'.$id)
             ->andReturn(new SmsSubmissionResult(SmsSubmissionStatus::ACCEPTED, 'sms-reference'));
         $job = new SendCardDeliveryJob($id);
         $job->handle(app(SendCardDeliveryService::class));

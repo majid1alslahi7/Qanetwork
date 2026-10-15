@@ -15,6 +15,7 @@ class AccountRegistrationResource extends JsonResource
     public function toArray(Request $request): array
     {
         return ['id' => $this->id, 'name' => $this->name, 'email' => $this->email,
+            'phone' => $this->phone,
             'role' => $this->role, 'business_name' => $this->business_name,
             'currency_code' => $this->currency_code, 'status' => $this->status,
             'user_id' => $this->user_id, 'review_reason' => $this->review_reason,

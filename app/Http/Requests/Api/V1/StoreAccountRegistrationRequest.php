@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Api\V1;
 
+use App\Services\Delivery\YemenPhoneNumber;
 use Closure;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
@@ -27,6 +28,7 @@ class StoreAccountRegistrationRequest extends FormRequest
     {
         return [
             'name' => ['required', 'string', 'max:150'],
+            'phone' => ['nullable', 'string', 'regex:/\A\+967(?:70|71|73|77)[0-9]{7}\z/'],
             'email' => ['required', 'string', 'email', 'max:255', 'unique:users,email', 'unique:account_registrations,email'],
             'password' => ['bail', 'required', 'string', 'max:1024', 'confirmed', Password::min(12)->mixedCase()->numbers()->symbols(),
                 function (string $attribute, mixed $value, Closure $fail): void {
@@ -47,6 +49,10 @@ class StoreAccountRegistrationRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
+        if (is_string($this->input('phone'))) {
+            $raw = $this->input('phone');
+            $this->merge(['phone' => $raw === '' ? null : (YemenPhoneNumber::normalize($raw) ?? $raw)]);
+        }
         if (is_string($this->input('email'))) {
             $this->merge(['email' => mb_strtolower(trim($this->input('email')))]);
         }

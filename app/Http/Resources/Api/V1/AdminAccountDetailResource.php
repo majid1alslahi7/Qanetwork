@@ -13,7 +13,7 @@ class AdminAccountDetailResource extends UserResource
 
         return parent::toArray($request) + ['profile' => [
             'business_name' => $seller?->business_name ?? $owner?->commercial_name,
-            'phone' => $seller?->phone ?? $owner?->phone, 'city' => $seller?->city ?? $owner?->city, 'address' => $seller?->address ?? $owner?->address],
+            'phone' => $this->sms_phone ?? $seller?->phone ?? $owner?->phone, 'city' => $seller?->city ?? $owner?->city, 'address' => $seller?->address ?? $owner?->address],
             'wallets' => $seller === null ? [] : SellerWalletResource::collection($seller->wallets),
             'networks' => $owner === null ? [] : NetworkResource::collection($owner->networks)];
     }

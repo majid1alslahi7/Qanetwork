@@ -3,10 +3,12 @@
 namespace App\Providers;
 
 use App\Models\AccountRegistration;
+use App\Models\AuditEvent;
 use App\Models\Network;
 use App\Models\ProviderSettlement;
 use App\Models\Sale;
 use App\Models\SellerDeposit;
+use App\Observers\OperationalMessageObserver;
 use App\Observers\OperationalNotificationObserver;
 use App\Providers\Inventory\StoredCardAdapter;
 use App\Providers\MikroTik\MikroTikHotspotAdapter;
@@ -55,6 +57,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        AuditEvent::observe(OperationalMessageObserver::class);
         foreach ([Sale::class, SellerDeposit::class, ProviderSettlement::class, AccountRegistration::class, Network::class] as $model) {
             $model::observe(OperationalNotificationObserver::class);
         }

@@ -4,6 +4,7 @@ return [
 
     'quick_connect' => [
         'enabled' => env('QUICK_CONNECT_ENABLED', false),
+        'operational_enabled' => env('QUICK_CONNECT_OPERATIONAL_ENABLED', false),
         'base_url' => env('QUICK_CONNECT_BASE_URL', 'https://aalcgjgocszngpcqzjih.supabase.co/functions/v1/public-api'),
         'api_key' => env('QUICK_CONNECT_API_KEY'),
     ],

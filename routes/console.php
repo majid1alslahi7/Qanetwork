@@ -17,3 +17,4 @@ Schedule::command('networks:check-health')->everyMinute()->withoutOverlapping(5)
 Schedule::command('sales:recover')->everyMinute()->withoutOverlapping(5);
 Schedule::command('sales:recover-reviews')->everyMinute()->withoutOverlapping(5);
 Schedule::command('delivery:recover')->everyMinute()->withoutOverlapping(5);
+Schedule::command('messages:recover')->everyMinute()->withoutOverlapping(5);

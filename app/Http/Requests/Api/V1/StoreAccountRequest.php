@@ -31,6 +31,7 @@ class StoreAccountRequest extends FormRequest
             'password' => ['required', 'string', 'max:1024', Password::min(12)->mixedCase()->numbers()->symbols()],
             'role' => ['required', Rule::enum(UserRole::class)],
             'business_name' => ['nullable', 'string', 'max:150'],
+            'phone' => ['nullable', 'string', 'max:50'],
             'currency_code' => ['sometimes', Rule::in(['YER', 'SAR', 'USD'])],
             'balance' => ['prohibited'],
             'reserved_balance' => ['prohibited'],

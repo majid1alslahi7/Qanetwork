@@ -5,6 +5,7 @@ namespace App\Services\Accounts;
 use App\Enums\UserRole;
 use App\Models\AuditEvent;
 use App\Models\User;
+use App\Services\Delivery\YemenPhoneNumber;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 
@@ -22,6 +23,9 @@ class UpdateAccountProfileService
             $target = $accounts->get($user->id);
             $before = $target->only(['name', 'email']);
             $target->fill(['name' => $data['name'], 'email' => $data['email']]);
+            if (array_key_exists('phone', $data)) {
+                $target->sms_phone = YemenPhoneNumber::normalize($data['phone']);
+            }
             if ($target->isDirty('email')) {
                 $target->email_verified_at = null;
             }

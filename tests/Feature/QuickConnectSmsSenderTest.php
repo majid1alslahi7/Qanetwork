@@ -27,13 +27,13 @@ class QuickConnectSmsSenderTest extends TestCase
     {
         Http::fake([self::URL.'/messages' => Http::response(['ids' => [self::ID], 'channel_requested' => 'sms', 'channels_used' => ['sms'], 'to' => '+967771234567', 'status' => 'queued'], 201)]);
 
-        $result = app(SmsSender::class)->submit('+967771234567', ['username' => 'user123', 'password' => 'secret123', 'provider_token' => 'never-send'], 'delivery:1');
+        $result = app(SmsSender::class)->submit('+967771234567', ['username' => 'user123', 'password' => 'secret123', 'provider_token' => 'never-send', 'network_name' => 'الملكي نت'], 'delivery:1');
 
         $this->assertSame(SmsSubmissionStatus::ACCEPTED, $result->status);
         $this->assertSame(self::ID, $result->providerReference);
         Http::assertSent(fn (Request $request) => $request->method() === 'POST' && $request->hasHeader('Authorization', 'Bearer qc_live_test')
             && $request['channel'] === 'sms' && $request['to'] === '+967771234567'
-            && $request['body'] === "QaNetwork — بيانات كرت الإنترنت\nاسم المستخدم: user123\nكلمة المرور: secret123");
+            && $request['body'] === "شبكة الملكي نت\nبيانات كرت الإنترنت\nاسم المستخدم: user123\nكلمة المرور: secret123\nخدمة QaNetwork");
         Http::assertSentCount(1);
     }
 

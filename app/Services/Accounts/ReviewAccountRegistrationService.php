@@ -39,6 +39,7 @@ class ReviewAccountRegistrationService
                 $user = $this->accounts->handle($administrator, [
                     'name' => $locked->name, 'email' => $locked->email, 'password' => $locked->password,
                     'role' => $locked->role, 'business_name' => $locked->business_name, 'currency_code' => $locked->currency_code,
+                    'phone' => $locked->phone,
                 ]);
                 $locked->user_id = $user->id;
             }

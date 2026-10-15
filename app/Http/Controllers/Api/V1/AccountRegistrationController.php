@@ -11,6 +11,7 @@ use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -19,7 +20,7 @@ class AccountRegistrationController extends Controller
     public function store(StoreAccountRegistrationRequest $request): JsonResponse
     {
         try {
-            $registration = AccountRegistration::query()->create($request->safe()->only(['name', 'email', 'password', 'role', 'business_name', 'currency_code']));
+            $registration = DB::transaction(fn () => AccountRegistration::query()->create($request->safe()->only(['name', 'email', 'password', 'role', 'business_name', 'currency_code', 'phone'])));
         } catch (UniqueConstraintViolationException) {
             throw ValidationException::withMessages(['email' => 'An account or request with this email already exists.']);
         }
