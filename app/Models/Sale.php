@@ -23,11 +23,16 @@ class Sale extends Model
         'currency_code',
         'delivery_method',
         'customer_phone',
+        'seller_contact_id',
+        'customer_snapshot',
     ];
+
+    protected $hidden = ['customer_snapshot'];
 
     protected function casts(): array
     {
         return [
+            'customer_snapshot' => 'encrypted:array',
             'started_at' => 'datetime',
             'provider_confirmed_at' => 'datetime',
             'accounting_posted_at' => 'datetime',
@@ -39,6 +44,11 @@ class Sale extends Model
     public function seller(): BelongsTo
     {
         return $this->belongsTo(Seller::class);
+    }
+
+    public function contact(): BelongsTo
+    {
+        return $this->belongsTo(SellerContact::class, 'seller_contact_id');
     }
 
     public function wallet(): BelongsTo

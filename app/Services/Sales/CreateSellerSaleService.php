@@ -27,7 +27,7 @@ class CreateSellerSaleService
         private readonly SaleableNetworkService $networks,
     ) {}
 
-    /** @param array{product_id: string, wallet_id: string, idempotency_key: string, expected_pricing_rule_id?: string, expected_commission_rule_id?: string} $data */
+    /** @param array{product_id: string, wallet_id: string, idempotency_key: string, contact_id?: ?string, expected_pricing_rule_id?: string, expected_commission_rule_id?: string} $data */
     public function handle(User $actor, array $data): Sale
     {
         $sale = DB::transaction(function () use ($actor, $data): Sale {
@@ -39,12 +39,14 @@ class CreateSellerSaleService
             $key = 'seller:'.$seller->id.':'.hash('sha256', $data['idempotency_key']);
             $existing = $seller->sales()->where('idempotency_key', $key)->first();
             if ($existing !== null) {
-                if ($existing->network_product_id !== $data['product_id'] || $existing->seller_wallet_id !== $data['wallet_id']) {
+                if ($existing->network_product_id !== $data['product_id'] || $existing->seller_wallet_id !== $data['wallet_id']
+                    || ($existing->customer_snapshot['id'] ?? null) !== ($data['contact_id'] ?? null)) {
                     throw new ConflictHttpException('The idempotency key has already been used for a different sale request.');
                 }
 
                 return $existing;
             }
+            $contact = isset($data['contact_id']) ? $seller->contacts()->lockForUpdate()->findOrFail($data['contact_id']) : null;
             $product = NetworkProduct::query()->findOrFail($data['product_id']);
             $network = Network::query()->lockForUpdate()->findOrFail($product->network_id);
             $product = $network->products()->lockForUpdate()->findOrFail($product->id);
@@ -60,7 +62,9 @@ class CreateSellerSaleService
             $sale = Sale::query()->create(['seller_id' => $seller->id, 'seller_wallet_id' => $wallet->id,
                 'network_id' => $network->id, 'network_product_id' => $product->id,
                 'reference_no' => 'SALE-'.Str::ulid(), 'idempotency_key' => $key,
-                'currency_code' => $product->currency_code, 'delivery_method' => 'screen']);
+                'currency_code' => $product->currency_code, 'delivery_method' => 'screen',
+                'seller_contact_id' => $contact?->id,
+                'customer_snapshot' => $contact === null ? null : ['id' => $contact->id, 'name' => $contact->name, 'phone' => $contact->phone]]);
             $financial = $this->pricing->handle($sale);
             if ((isset($data['expected_pricing_rule_id']) && $data['expected_pricing_rule_id'] !== $financial->pricing_rule_id)
                 || (isset($data['expected_commission_rule_id']) && $data['expected_commission_rule_id'] !== $financial->commission_rule_id)) {

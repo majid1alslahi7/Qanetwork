@@ -3,9 +3,12 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Api\V1\SellerEarningsReportRequest;
 use App\Http\Requests\Api\V1\StoreSellerContactRequest;
+use App\Http\Resources\Api\V1\SaleResource;
 use App\Http\Resources\Api\V1\SellerContactResource;
 use App\Services\Accounts\ManageSellerContactService;
+use App\Services\Accounts\SellerContactHistoryService;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -28,6 +31,18 @@ class SellerContactController extends Controller
     public function show(Request $request, string $contact): SellerContactResource
     {
         return new SellerContactResource($request->user()->seller()->firstOrFail()->contacts()->findOrFail($contact));
+    }
+
+    public function sales(SellerEarningsReportRequest $request, string $contact, SellerContactHistoryService $history): AnonymousResourceCollection
+    {
+        $seller = $request->user()->seller()->where('status', 'active')->firstOrFail();
+        $customer = $seller->contacts()->findOrFail($contact);
+        $from = $request->fromDate();
+        $to = $request->toDate();
+
+        return SaleResource::collection($history->sales($seller, $customer, $from, $to)->with('financial')
+            ->orderByDesc('created_at')->orderByDesc('id')->paginate(25))
+            ->additional(['summary' => $history->summary($seller, $customer, $from, $to)]);
     }
 
     public function store(StoreSellerContactRequest $request, ManageSellerContactService $service): SellerContactResource

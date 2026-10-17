@@ -15,6 +15,7 @@ class StoreSellerSaleRequest extends FormRequest
     public function rules(): array
     {
         return ['product_id' => ['required', 'ulid'], 'wallet_id' => ['required', 'ulid'],
+            'contact_id' => ['sometimes', 'nullable', 'ulid'],
             'idempotency_key' => ['required', 'string', 'min:8', 'max:100', 'regex:/\A[A-Za-z0-9_-]+\z/'],
             'expected_pricing_rule_id' => ['required_with:expected_commission_rule_id', 'ulid'],
             'expected_commission_rule_id' => ['required_with:expected_pricing_rule_id', 'ulid'],

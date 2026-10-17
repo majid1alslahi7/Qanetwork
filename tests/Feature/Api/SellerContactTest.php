@@ -58,6 +58,18 @@ class SellerContactTest extends TestCase
         $this->assertDatabaseCount('seller_contacts', 0);
     }
 
+    public function test_customer_history_requires_authentication_seller_role_and_seller_scope(): void
+    {
+        $contact = SellerContact::factory()->create();
+        $path = '/api/v1/seller/contacts/'.$contact->id.'/sales?from=2026-10-01&to=2026-10-16';
+        $this->getJson($path)->assertUnauthorized();
+        $user = $this->seller();
+        Sanctum::actingAs($user, ['account']);
+        $this->getJson($path)->assertForbidden();
+        Sanctum::actingAs(User::factory()->create(['role' => UserRole::ADMIN]), ['account', 'seller', 'admin']);
+        $this->getJson($path)->assertForbidden();
+    }
+
     private function seller(): User
     {
         $admin = User::factory()->create(['role' => UserRole::ADMIN]);

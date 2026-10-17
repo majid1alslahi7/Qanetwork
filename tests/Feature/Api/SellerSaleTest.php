@@ -12,6 +12,7 @@ use App\Models\NetworkOwner;
 use App\Models\NetworkProduct;
 use App\Models\Sale;
 use App\Models\Seller;
+use App\Models\SellerContact;
 use App\Models\SellerWallet;
 use App\Models\User;
 use App\Providers\Contracts\ProviderAdapter;
@@ -30,6 +31,80 @@ use Tests\TestCase;
 class SellerSaleTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_contact_snapshot_is_encrypted_and_survives_contact_edits_deletion_and_replay(): void
+    {
+        [$wallet, $product] = $this->setupSeller();
+        $contact = SellerContact::factory()->create(['seller_id' => $wallet->seller_id, 'name' => 'Original customer', 'phone' => '+967771234567']);
+        $payload = $this->payload($wallet, $product) + ['contact_id' => $contact->id];
+        $id = $this->postJson('/api/v1/seller/sales', $payload)->assertAccepted()
+            ->assertJsonPath('data.customer.name', 'Original customer')->assertJsonPath('data.customer.phone', '+967771234567')->json('data.id');
+        $this->assertStringNotContainsString('Original customer', DB::table('sales')->where('id', $id)->value('customer_snapshot'));
+        $contact->update(['name' => 'Changed customer', 'phone' => '+967777654321']);
+        $this->getJson('/api/v1/seller/sales/'.$id)->assertOk()->assertJsonPath('data.customer.name', 'Original customer');
+        $contact->delete();
+        $this->assertNull(Sale::query()->findOrFail($id)->seller_contact_id);
+        $this->postJson('/api/v1/seller/sales', $payload)->assertAccepted()->assertJsonPath('data.id', $id)
+            ->assertJsonPath('data.customer.contact_id', null)->assertJsonPath('data.customer.name', 'Original customer');
+        $this->postJson('/api/v1/seller/sales', $this->payload($wallet, $product))->assertConflict();
+        $this->assertDatabaseCount('sales', 1);
+        $this->assertDatabaseCount('sale_reservations', 1);
+        $this->assertSame('850.0000', $wallet->fresh()->reserved_balance);
+        Sanctum::actingAs(User::factory()->create(['role' => UserRole::ADMIN]), ['account', 'admin']);
+        $this->getJson('/api/v1/admin/sales/'.$id)->assertOk()->assertJsonMissingPath('data.customer');
+    }
+
+    public function test_foreign_contact_cannot_reserve_balance_and_contact_change_conflicts_with_replay(): void
+    {
+        [$wallet, $product] = $this->setupSeller();
+        $foreign = SellerContact::factory()->create();
+        $this->postJson('/api/v1/seller/sales', $this->payload($wallet, $product) + ['contact_id' => $foreign->id])->assertNotFound();
+        $this->assertDatabaseCount('sales', 0);
+        $this->assertSame('0.0000', $wallet->fresh()->reserved_balance);
+        $contacts = SellerContact::factory()->count(2)->create(['seller_id' => $wallet->seller_id]);
+        $this->postJson('/api/v1/seller/sales', $this->payload($wallet, $product) + ['contact_id' => $contacts[0]->id])->assertAccepted();
+        $this->postJson('/api/v1/seller/sales', $this->payload($wallet, $product) + ['contact_id' => $contacts[1]->id])->assertConflict();
+        $this->assertDatabaseCount('sales', 1);
+        $this->assertSame('850.0000', $wallet->fresh()->reserved_balance);
+    }
+
+    public function test_contact_history_scopes_sales_dates_statuses_and_exact_financial_totals(): void
+    {
+        [$wallet, $product] = $this->setupSeller();
+        $contact = SellerContact::factory()->create(['seller_id' => $wallet->seller_id]);
+        $payload = $this->payload($wallet, $product) + ['contact_id' => $contact->id];
+        $id = $this->postJson('/api/v1/seller/sales', $payload)->assertAccepted()->json('data.id');
+        $sale = Sale::query()->findOrFail($id);
+        $sale->forceFill(['status' => 'completed', 'created_at' => '2026-10-12 23:59:59'])->save();
+        $reserved = $sale->replicate(['reference_no', 'idempotency_key']);
+        $reserved->forceFill(['reference_no' => 'pending-contact', 'idempotency_key' => 'pending-contact', 'status' => 'balance_reserved', 'created_at' => '2026-10-12 00:00:00'])->save();
+        $outside = $sale->replicate(['reference_no', 'idempotency_key']);
+        $outside->forceFill(['reference_no' => 'outside-contact', 'idempotency_key' => 'outside-contact', 'created_at' => '2026-10-13 00:00:00'])->save();
+        $other = $sale->replicate(['reference_no', 'idempotency_key']);
+        $other->forceFill(['reference_no' => 'other-contact', 'idempotency_key' => 'other-contact', 'seller_contact_id' => null, 'customer_snapshot' => null, 'created_at' => '2026-10-12 10:00:00'])->save();
+        $response = $this->getJson('/api/v1/seller/contacts/'.$contact->id.'/sales?from=2026-10-12&to=2026-10-12')->assertOk()
+            ->assertJsonCount(2, 'data')->assertJsonPath('summary.status_counts.completed', 1)
+            ->assertJsonPath('summary.status_counts.balance_reserved', 1)
+            ->assertJsonPath('summary.currencies.0.sale_count', 1)
+            ->assertJsonPath('summary.currencies.0.face_value', '1000.0000')
+            ->assertJsonPath('summary.currencies.0.seller_commission', '150.0000')
+            ->assertJsonPath('summary.currencies.0.seller_net_amount', '850.0000')
+            ->assertJsonPath('summary.period.basis', 'created_at');
+        $this->assertStringNotContainsString('provider_amount', $response->getContent());
+        $foreign = SellerContact::factory()->create();
+        $this->getJson('/api/v1/seller/contacts/'.$foreign->id.'/sales?from=2026-10-12&to=2026-10-12')->assertNotFound();
+        $this->getJson('/api/v1/seller/contacts/'.$contact->id.'/sales?from=2026-09-01&to=2026-10-12')->assertUnprocessable();
+        $this->getJson('/api/v1/seller/contacts/'.$contact->id.'/sales?from=2026-10-14&to=2026-10-12')->assertUnprocessable();
+
+        $usd = $sale->replicate(['reference_no', 'idempotency_key']);
+        $usd->forceFill(['reference_no' => 'usd-contact', 'idempotency_key' => 'usd-contact', 'currency_code' => 'USD', 'created_at' => '2026-10-12 12:00:00'])->save();
+        $financial = $sale->financial->replicate();
+        $financial->forceFill(['sale_id' => $usd->id, 'currency_code' => 'USD', 'face_value' => '0.0010', 'seller_commission' => '0.0001', 'seller_net_amount' => '0.0009'])->save();
+        $this->getJson('/api/v1/seller/contacts/'.$contact->id.'/sales?from=2026-10-12&to=2026-10-12')->assertOk()
+            ->assertJsonCount(2, 'summary.currencies')->assertJsonPath('summary.currencies.0.currency_code', 'USD')
+            ->assertJsonPath('summary.currencies.0.seller_commission', '0.0001')
+            ->assertJsonPath('summary.currencies.1.currency_code', 'YER')->assertJsonPath('summary.currencies.1.seller_commission', '150.0000');
+    }
 
     public function test_sale_reserves_exact_priced_balance_and_replay_does_not_duplicate_records(): void
     {

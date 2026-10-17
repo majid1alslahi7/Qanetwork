@@ -102,6 +102,7 @@ Route::prefix('v1')->name('api.v1.')->group(function (): void {
             Route::apiResource('deposits', SellerDepositController::class)->only(['index', 'show', 'store'])->names('seller.deposits');
             Route::get('wallets', [SellerWalletController::class, 'index'])->name('seller.wallets.index');
             Route::get('earnings/summary', [SellerEarningsController::class, 'summary'])->name('seller.earnings.summary');
+            Route::get('contacts/{contact}/sales', [SellerContactController::class, 'sales'])->name('seller.contacts.sales');
             Route::apiResource('contacts', SellerContactController::class)->names('seller.contacts');
             Route::get('earnings/sales', [SellerEarningsController::class, 'index'])->name('seller.earnings.sales');
             Route::get('wallets/{wallet}', [SellerWalletController::class, 'show'])->name('seller.wallets.show');
