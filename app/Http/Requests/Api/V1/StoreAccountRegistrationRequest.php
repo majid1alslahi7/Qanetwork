@@ -28,7 +28,7 @@ class StoreAccountRegistrationRequest extends FormRequest
     {
         return [
             'name' => ['required', 'string', 'max:150'],
-            'phone' => ['nullable', 'string', 'regex:/\A\+967(?:70|71|73|77)[0-9]{7}\z/'],
+            'phone' => ['required', 'string', 'regex:/\A\+967(?:70|71|73|77)[0-9]{7}\z/'],
             'email' => ['required', 'string', 'email', 'max:255', 'unique:users,email', 'unique:account_registrations,email'],
             'password' => ['bail', 'required', 'string', 'max:1024', 'confirmed', Password::min(12)->mixedCase()->numbers()->symbols(),
                 function (string $attribute, mixed $value, Closure $fail): void {

@@ -22,7 +22,7 @@ class SellerSaleController extends Controller
 
     public function show(Request $request, string $sale): SaleResource
     {
-        return new SaleResource($request->user()->seller()->firstOrFail()->sales()->with('financial')->findOrFail($sale));
+        return new SaleResource($request->user()->seller()->firstOrFail()->sales()->with(['financial', 'network:id,name', 'product:id,name,display_name'])->findOrFail($sale));
     }
 
     public function store(StoreSellerSaleRequest $request, CreateSellerSaleService $service): JsonResponse

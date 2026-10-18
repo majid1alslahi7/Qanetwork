@@ -18,6 +18,7 @@ class OwnerNetworkProductResource extends JsonResource
             'name' => $this->name, 'fulfillment_connection_id' => $this->fulfillment_connection_id, 'display_name' => $this->display_name, 'face_value' => $this->face_value,
             'currency_code' => $this->currency_code, 'data_limit_bytes' => $this->data_limit_bytes,
             'duration_minutes' => $this->duration_minutes, 'status' => $this->status,
+            'cover_version' => $this->cover_path === null ? null : substr(hash('sha256', $this->cover_path), 0, 20),
             'availability_status' => $this->availability_status];
     }
 }

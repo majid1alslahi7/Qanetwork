@@ -33,7 +33,7 @@ class AdminSaleController extends Controller
 
     public function show(Sale $sale): AdminSaleResource
     {
-        return new AdminSaleResource($sale->load(['financial', 'providerTransaction']));
+        return new AdminSaleResource($sale->load(['financial', 'providerTransaction', 'network:id,name', 'product:id,name,display_name']));
     }
 
     public function reviews(Request $request, Sale $sale): AnonymousResourceCollection

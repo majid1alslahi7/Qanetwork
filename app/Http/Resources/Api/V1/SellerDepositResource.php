@@ -13,6 +13,7 @@ class SellerDepositResource extends JsonResource
             'wallet_id' => $this->seller_wallet_id, 'amount' => $this->amount, 'currency_code' => $this->currency_code,
             'payment_method' => $this->payment_method, 'external_reference' => $this->external_reference,
             'seller_notes' => $this->seller_notes, 'status' => $this->status,
+            'receipt_version' => $this->receipt_path === null ? null : substr(hash('sha256', $this->receipt_path), 0, 20),
             'review_notes' => $this->review_notes, 'submitted_at' => $this->submitted_at?->toIso8601String(),
             'reviewed_at' => $this->reviewed_at?->toIso8601String()];
     }

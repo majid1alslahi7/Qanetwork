@@ -60,6 +60,14 @@ class AccountRegistrationApiTest extends TestCase
         return [['seller'], ['network_owner']];
     }
 
+    public function test_registration_requires_a_yemeni_phone_and_normalizes_local_arabic_digits(): void
+    {
+        $this->postJson('/api/v1/auth/register', [...$this->payload(), 'phone' => ''])->assertUnprocessable()->assertJsonValidationErrors('phone');
+        $this->postJson('/api/v1/auth/register', [...$this->payload(), 'phone' => '761234567'])->assertUnprocessable()->assertJsonValidationErrors('phone');
+        $this->postJson('/api/v1/auth/register', [...$this->payload(), 'phone' => '٠٧٧١٢٣٤٥٦٧'])->assertCreated();
+        $this->assertSame('+967771234567', AccountRegistration::query()->sole()->phone);
+    }
+
     public function test_rejected_request_loses_password_and_cannot_be_approved(): void
     {
         $registration = AccountRegistration::factory()->create();
@@ -147,6 +155,6 @@ class AccountRegistrationApiTest extends TestCase
 
     private function payload(string $role = 'seller'): array
     {
-        return ['name' => 'New Account', 'email' => 'new@example.test', 'password' => 'Strong-Password12!', 'password_confirmation' => 'Strong-Password12!', 'role' => $role, 'currency_code' => 'YER'];
+        return ['name' => 'New Account', 'email' => 'new@example.test', 'phone' => '771234567', 'password' => 'Strong-Password12!', 'password_confirmation' => 'Strong-Password12!', 'role' => $role, 'currency_code' => 'YER'];
     }
 }

@@ -1,7 +1,9 @@
 <?php
 
+use App\Http\Controllers\Api\V1\AccountMediaController;
 use App\Http\Controllers\Api\V1\AccountNotificationController;
 use App\Http\Controllers\Api\V1\AccountRegistrationController;
+use App\Http\Controllers\Api\V1\AccountStatementController;
 use App\Http\Controllers\Api\V1\AdminAccountController;
 use App\Http\Controllers\Api\V1\AdminAccountDeviceController;
 use App\Http\Controllers\Api\V1\AdminAccountingController;
@@ -45,6 +47,11 @@ Route::prefix('v1')->name('api.v1.')->group(function (): void {
         Route::get('auth/me', [AuthController::class, 'me'])->name('auth.me');
         Route::post('auth/logout', [AuthController::class, 'logout'])->name('auth.logout');
         Route::prefix('admin')->middleware(['role:admin', 'abilities:admin'])->group(function (): void {
+            Route::get('statement', [AccountStatementController::class, 'show'])->name('admin.statement');
+            Route::get('accounts/{user}/statement', [AccountStatementController::class, 'show'])->name('admin.accounts.statement');
+            Route::get('deposits/{deposit}/receipt', [AccountMediaController::class, 'receipt'])->name('admin.deposits.receipt');
+            Route::get('networks/{network}/products/{product}/cover', [AccountMediaController::class, 'cover'])->name('admin.products.cover');
+            Route::post('networks/{network}/products/{product}/cover', [AccountMediaController::class, 'storeCover'])->middleware('throttle:inventory-import')->name('admin.products.cover.store');
             Route::post('notification-device', [NotificationDeviceController::class, 'store'])->middleware('throttle:notification-device')->name('admin.notification-device.store');
             Route::delete('notification-device', [NotificationDeviceController::class, 'destroy'])->name('admin.notification-device.destroy');
             Route::get('notifications', [AccountNotificationController::class, 'index'])->name('admin.notifications.index');
@@ -92,6 +99,10 @@ Route::prefix('v1')->name('api.v1.')->group(function (): void {
             Route::delete('networks/{network}/products/{product}/pricing/{pricingRule}/commissions/{commission}', [AdminSellerCommissionController::class, 'destroy'])->scopeBindings()->name('admin.commissions.destroy');
         });
         Route::prefix('seller')->middleware(['role:seller', 'abilities:seller'])->group(function (): void {
+            Route::get('statement', [AccountStatementController::class, 'show'])->name('seller.statement');
+            Route::get('deposits/{deposit}/receipt', [AccountMediaController::class, 'receipt'])->name('seller.deposits.receipt');
+            Route::post('deposits/{deposit}/receipt', [AccountMediaController::class, 'storeReceipt'])->middleware('throttle:inventory-import')->name('seller.deposits.receipt.store');
+            Route::get('networks/{network}/products/{product}/cover', [AccountMediaController::class, 'cover'])->name('seller.products.cover');
             Route::post('notification-device', [NotificationDeviceController::class, 'store'])->middleware('throttle:notification-device')->name('seller.notification-device.store');
             Route::delete('notification-device', [NotificationDeviceController::class, 'destroy'])->name('seller.notification-device.destroy');
             Route::get('notifications', [AccountNotificationController::class, 'index'])->name('seller.notifications.index');
@@ -112,6 +123,9 @@ Route::prefix('v1')->name('api.v1.')->group(function (): void {
             Route::get('sales/{sale}/delivery', [SellerCardDeliveryController::class, 'show'])->name('seller.delivery.show');
         });
         Route::prefix('owner')->middleware(['role:network_owner', 'abilities:network_owner'])->group(function (): void {
+            Route::get('statement', [AccountStatementController::class, 'show'])->name('owner.statement');
+            Route::get('networks/{network}/products/{product}/cover', [AccountMediaController::class, 'cover'])->name('owner.products.cover');
+            Route::post('networks/{network}/products/{product}/cover', [AccountMediaController::class, 'storeCover'])->middleware('throttle:inventory-import')->name('owner.products.cover.store');
             Route::post('notification-device', [NotificationDeviceController::class, 'store'])->middleware('throttle:notification-device')->name('owner.notification-device.store');
             Route::delete('notification-device', [NotificationDeviceController::class, 'destroy'])->name('owner.notification-device.destroy');
             Route::get('notifications', [AccountNotificationController::class, 'index'])->name('owner.notifications.index');
